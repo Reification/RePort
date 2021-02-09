@@ -3,7 +3,8 @@ Convert your building design into a first-person experience in 3 steps:
 1. Export your design from [Rhino](https://www.rhino3d.com/)
 2. Drop the export into [Unity](https://unity.com/)
 3. Click the "play" button to begin touring your building
-No coding required - just download the latest package!
+
+No coding required - just [download the latest package!](https://github.com/Reification/RePort/releases/download/v0.1.1/Reification_RePort_v0.1.1.zip)
 
 ## Features of the import include:
 * Dynamic bounced sunlight
