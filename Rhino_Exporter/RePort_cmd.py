@@ -44,11 +44,7 @@ def safe_file_name(name):
 # Unity import looks for suffix to determined format,
 # and at names before suffix to determine provenance.
 def save_suffix():
-    #if version == 6:
-    #    return ".3dm_6.fbx"
-    #if version == 5:
-    #    return ".3dm_5.fbx"
-    return ".fbx"
+    return ".3dm_" + str(version) + ".fbx"
 
 # IDEA: When exporting placeholders
 # exclude materials and textures
@@ -97,6 +93,7 @@ def fbx_options():
     raise Exception("Unsupported Rhino version: " + str(version))
 
 # TODO: Adapt distance options to file units
+# IDEA: Interactive mode could allow modification of defaults
 
 # Parametric Surface Meshing Options
 # https://wiki.mcneel.com/rhino/meshsettings
