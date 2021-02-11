@@ -388,6 +388,10 @@ def GetExportPath(is_interactive):
 # TODO: Find a way to not register scene changes
 
 def RunCommand(is_interactive):
+    if not (version == 5 or version == 6):
+        print(__commandname__ + ": does not support Rhino version " + str(version) + " -> abort")
+        return
+    
     path_name = GetExportPath(is_interactive)
     if path_name is None:
         print(__commandname__ + ": no export location -> abort")
