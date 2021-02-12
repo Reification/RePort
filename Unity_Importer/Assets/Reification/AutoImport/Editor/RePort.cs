@@ -12,13 +12,72 @@ namespace Reification {
 		public const string importPath = "Assets/RePort/";
 
 		// Meshes import includes fixed detail meshes and light sources
-		public const string meshesSuffix = "meshes";
+		public const string meshesElement = "meshes";
 
 		// Detail import includes meshes derived from parametric sampling
-		public const string detailSuffix = "detail";
+		public const string detailElement = "detail"; // Followed by detail level number (e.g. detail0)
 
 		// Instances import will result in prefab replacement
-		public const string placesSuffix = "places";
+		public const string placesElement = "places";
+
+		// TEMP: This will be a dictionary with values referencing import handlers
+		// that register during editor initialization.
+		static public HashSet<string> sources = new HashSet<string> { "3dm_5", "3dm_6" };
+
+		/// <summary>
+		/// Parse exported file name of model or model element
+		/// </summary>
+		/// <remarks>
+		/// File names are expected to be formatted as "[path]/[model].[element].[source].[filetype]"
+		/// The suffix and source fields are optional, but will be included when by RePort compatible exporters.
+		/// If source name is not recognized the element field will not be checked so the model will be created from this single element.
+		/// If the element name is not recognized the model will be created from this single element.
+		/// </remarks>
+		/// <param name="assetPath">Path to file, including file name</param>
+		/// <param name="path">The path to the model, will be the same for all elements and constituent models</param>
+		/// <param name="model">The model base name, will be the same for all elements</param>
+		/// <param name="element">Optionally empty: The model element identifier, used to configure import</param>
+		/// <param name="source">Optionally empty: The model source application, used to reconcile coordinates</param>
+		/// <param name="type">The model file type</param>
+		static public void ParseModelName(string assetPath, out string path, out string model, out string element, out string source, out string type) {
+			path = "";
+			model = "";
+			element = "";
+			source = "";
+			type = "";
+
+			var pathParts = assetPath.Split('/');
+			var pathIndex = pathParts.Length - 1;
+			if(pathIndex < 0) return;
+			path = pathParts[0];
+			for(int p = 1; p < pathIndex - 1; ++p) path += '/' + pathParts[p];
+
+			var nameParts = pathParts[pathIndex].Split('.');
+			var nameIndex = nameParts.Length - 1;
+			if(nameIndex < 0) return;
+			if(nameIndex > 0) {
+				type = nameParts[nameIndex];
+				--nameIndex;
+			}
+			if(nameIndex > 0) {
+				if(sources.Contains(nameParts[nameIndex])) {
+					source = nameParts[nameIndex];
+					--nameIndex;
+				}
+			}
+			if(nameIndex > 0 && source.Length > 0) {
+				if(
+					nameParts[nameIndex].StartsWith(meshesElement) ||
+					nameParts[nameIndex].StartsWith(detailElement) ||
+					nameParts[nameIndex].StartsWith(placesElement)
+				) {
+					element = nameParts[nameIndex];
+					--nameIndex;
+				}
+			}
+			model = nameParts[0];
+			for(int p = 1; p <= nameIndex; ++p) model += '/' + nameParts[p];
+		}
 
 		public RePort() {
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
@@ -27,19 +86,14 @@ namespace Reification {
 		// Import using mesh optimization and UV generation
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
-			if(importedModels.Contains(assetPath)) return;
+			if(importAssets.Contains(assetPath)) return;
 			//Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
 
-			var modelImporter = assetImporter as ModelImporter;
-			var modelPathRoot = assetPath.Substring(0, assetPath.LastIndexOf('.'));
-
-			// Non-type suffix determines import configuration
-			var suffixList = assetPath.Split('.');
-			var suffix = suffixList.Length >= 2 ? suffixList[suffixList.Length - 2] : "";
-
 			// Configure import
-			switch(suffix) {
-			case placesSuffix:
+			var modelImporter = assetImporter as ModelImporter;
+			ParseModelName(assetPath, out _, out _, out var element, out _, out _);
+			switch(element) {
+			case placesElement:
 				PlacesImporter(modelImporter);
 				break;
 			default:
@@ -102,22 +156,27 @@ namespace Reification {
 		// Construct prefab from extracted assets
 		void OnPostprocessModel(GameObject model) {
 			if(!assetPath.StartsWith(importPath)) return;
-			if(importedModels.Contains(assetPath)) return;
+			if(importAssets.Contains(assetPath)) return;
 			//Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
 
 			// Strip empty nodes
 			// NOTE: Removing cameras applies to components, but not to their gameObjects
+			// TODO: Identify and remove zero sized meshes (avoids warnings in console)
 			RemoveEmpty(model);
 
 			// Enqueue model for processing during editor update
-			// IMPORTANT: During import (including during OnPostprocessAllAssets)
+			// PROBLEM: During import (including during OnPostprocessAllAssets)
 			// AssetDatabase is implicitly subject to StartAssetEditing()
 			// This prevents created asset discovery, and also prevents created collider physics
-			importedModels.Add(assetPath);
+			// SOLUTION: Enqueue asset combine, assemble & configure steps after import concludes
+			importAssets.Add(assetPath);
 			EditorApplication.update += ProcessImportedModels;
 		}
 
-		void RemoveEmpty(GameObject gameObject) {
+		/// <summary>
+		/// Removes all empty branches in the hierarchy of a GameObject
+		/// </summary>
+		static public void RemoveEmpty(GameObject gameObject) {
 			// IMPORTANT: Before counting children, apply RemoveEmpty to children
 			// since their removal could result in children being empty
 			var children = gameObject.transform.Children();
@@ -147,13 +206,12 @@ namespace Reification {
 			}
 		}
 
-		static HashSet<string> importedModels = new HashSet<string>();
+		static HashSet<string> importAssets = new HashSet<string>();
 
 		// TODO: Progress bar popup
+		// TODO: Check for PIM repeated calls after registration removal... and then prevent it!
 
 		static void ProcessImportedModels() {
-			EditorApplication.update -= ProcessImportedModels;
-
 			// There are 3 import types to consider:
 			// Partial models, which are in a subfolder of importPath and have a suffix
 			// Complete models, which are in a subfolder of importPath and have no suffix
@@ -162,9 +220,10 @@ namespace Reification {
 			var completeModels = new List<GameObject>();
 			var assembledModels = new List<GameObject>();
 
-			foreach(var modelPath in importedModels) {
+			foreach(var modelPath in importAssets) {
 				//Debug.Log($"RePort.ProcessImportedModels()\nassetPath = {modelPath}");
 
+				// TODO: Skip this step for places model element
 				// Extract all assets from each imported model
 				var model = ExtractAssets(modelPath);
 
@@ -173,32 +232,29 @@ namespace Reification {
 				if(mergePath == importPath.Substring(0, importPath.Length - 1)) {
 					completeModels.Add(model);
 				} else {
-					var isPartial = false;
-					var typeIndex = model.name.LastIndexOf('.');
-					if(typeIndex >= 0) {
-						var modelType = model.name.Substring(typeIndex + 1);
-						if(
-							modelType.StartsWith(meshesSuffix) ||
-							modelType.StartsWith(detailSuffix) ||
-							modelType.StartsWith(placesSuffix)
-						) isPartial = true;
-						if(isPartial) {
-							if(!partialModels.ContainsKey(mergePath)) partialModels.Add(mergePath, new List<GameObject>());
-							partialModels[mergePath].Add(model);
-						} else {
-							completeModels.Add(model);
-						}
+					ParseModelName(modelPath, out _, out _, out string element, out _, out _);
+					if(
+						element.StartsWith(meshesElement) ||
+						element.StartsWith(detailElement) ||
+						element.StartsWith(placesElement)
+					) {
+						if(!partialModels.ContainsKey(mergePath)) partialModels.Add(mergePath, new List<GameObject>());
+						partialModels[mergePath].Add(model);
+					} else {
+						completeModels.Add(model);
 					}
 				}
 			}
 
-			// IMPORTANT: imported models aborts calls to OnPreprocessModel and OnPostprocessModel above
-			// in the case that the model is reimported by this method.
-			importedModels.Clear();
-
 			CombinePartial(partialModels, completeModels);
 			AssembleComplete(completeModels, assembledModels);
 			var configured = ConfigureAssembled(assembledModels);
+
+			// IMPORTANT: importAssets must not be cleared until the import process is complete.
+			// importAssets abort calls to OnPreprocessModel and OnPostprocessModel
+			// in the case that a model is reimported by a method.
+			importAssets.Clear();
+			EditorApplication.update -= ProcessImportedModels;
 
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
@@ -217,7 +273,7 @@ namespace Reification {
 			var modelPathRoot = modelPath.Substring(0, modelPath.LastIndexOf('.'));
 			var prefabPath = modelPathRoot + ".prefab";
 
-			// Create independent prefab
+			// Create independent prefab - FIXME: Skip this instantiation... GatherAssets handles it
 			var model = EP.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(modelPath));
 			PrefabUtility.UnpackPrefabInstance(model, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
 			var prefab = PrefabUtility.SaveAsPrefabAsset(model, prefabPath);
