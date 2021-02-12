@@ -83,11 +83,10 @@ namespace Reification {
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
 		}
 
-		// Import using mesh optimization and UV generation
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
 			if(importAssets.Contains(assetPath)) return;
-			//Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
+			Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
 
 			// Configure import
 			var modelImporter = assetImporter as ModelImporter;
@@ -153,15 +152,42 @@ namespace Reification {
 			modelImporter.importTangents = ModelImporterTangents.None;
 		}
 
-		// Construct prefab from extracted assets
+
+		void OnPostprocessMeshHierarchy(GameObject child) {
+			if(!assetPath.StartsWith(importPath)) return;
+			if(importAssets.Contains(assetPath)) return;
+			Debug.Log($"RePort.OnPostprocessMeshHierarchy({child.name})\nassetPath = {assetPath}");
+
+			// TEMP: Explicitly break out supported models
+			ParseModelName(assetPath, out _, out _, out string element, out string source, out _);
+			switch(source) {
+			case "3dm_5":
+				Rhino5_ImportTransforms(child.transform, element);
+				break;
+			case "3dm_6":
+				Rhino6_ImportTransforms(child.transform, element);
+				break;
+			}
+		}
+
+		static void Rhino5_ImportTransforms(Transform child, string element) {
+			// Rotate each layer to be consistent with Rhino6 import
+			child.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f) * child.localRotation;
+		}
+
+		static void Rhino6_ImportTransforms(Transform child, string element) {
+			// TEMP: Do nothing
+		}
+
 		void OnPostprocessModel(GameObject model) {
 			if(!assetPath.StartsWith(importPath)) return;
 			if(importAssets.Contains(assetPath)) return;
-			//Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
+			Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
+
+			// TODO: In case of places element apply coordinate inversion
 
 			// Strip empty nodes
 			// NOTE: Removing cameras applies to components, but not to their gameObjects
-			// TODO: Identify and remove zero sized meshes (avoids warnings in console)
 			RemoveEmpty(model);
 
 			// Enqueue model for processing during editor update
