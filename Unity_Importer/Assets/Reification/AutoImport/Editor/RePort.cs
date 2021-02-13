@@ -139,7 +139,7 @@ namespace Reification {
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
 			if(importAssets.Contains(assetPath)) return;
-			//Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
+			Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
 
 			// Configure import
 			var modelImporter = assetImporter as ModelImporter;
@@ -272,6 +272,20 @@ namespace Reification {
 		// FIXME: Check for PIM repeated calls after registration removal... and then prevent it!
 
 		static void ProcessImportedModels() {
+			// Ensure that ProcessImportedModels is called only once per import batch
+			// IMPORTANT: Unregistering must occur before any possible exception to prevent lockup.
+			EditorApplication.update -= ProcessImportedModels;
+
+			// PROBLEM: Unsubscribing from EditorApplication.update is not immediate - multiple callbacks may be received
+			// SOLUTION: Check importAssets count and abort immediately if empty.
+			if(importAssets.Count == 0) {
+				Debug.LogWarning($"GLITCH: RePort.ProcessImportedModels()");
+				return;
+			}
+			var modelPathList = new HashSet<string>(importAssets);
+			importAssets.Clear();
+			Debug.Log($"RePort.ProcessImportedModels()");
+
 			// There are 3 import types to consider:
 			// Partial models, which are in a subfolder of importPath and have a suffix
 			// Complete models, which are in a subfolder of importPath and have no suffix
@@ -280,8 +294,8 @@ namespace Reification {
 			var completeModels = new List<GameObject>();
 			var assembledModels = new List<GameObject>();
 
-			foreach(var modelPath in importAssets) {
-				//Debug.Log($"RePort.ProcessImportedModels()\nassetPath = {modelPath}");
+			foreach(var modelPath in modelPathList) {
+				Debug.Log($"RePort.ProcessImportedModels()\nmodelPath = {modelPath}");
 
 				// TODO: Skip this step for places model element
 				// Extract all assets from each imported model
@@ -310,7 +324,6 @@ namespace Reification {
 			// importAssets abort calls to OnPreprocessModel and OnPostprocessModel
 			// in the case that a model is reimported by a method.
 			importAssets.Clear();
-			EditorApplication.update -= ProcessImportedModels;
 
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
