@@ -22,9 +22,39 @@ namespace Reification {
 
 		// TODO: Element should be represented using Enum
 
-		// TEMP: This will be a dictionary with values referencing import handlers
-		// that register during editor initialization.
-		static public HashSet<string> sources = new HashSet<string> { "3dm_5", "3dm_6" };
+		/// <summary>
+		/// Import post-processing depending on the export application
+		/// </summary>
+		public interface Importer {
+			/// <summary>
+			/// Filename suffix identifying exporting application
+			/// </summary>
+			string suffix { get; }
+
+			/// <summary>
+			/// Delegate called from OnPostprocessMeshHierarchy
+			/// </summary>
+			/// <remarks>
+			/// OnPostprocessMeshHierarchy is called once for each child transform
+			/// of the imported model root transform.
+			/// </remarks>
+			/// <param name="child">Model child transform being imported</param>
+			/// <param name="element">Model element being importer</param>
+			void ImportMeshHierarchy(Transform child, string element);
+
+			// TODO: Other processing hooks
+		}
+
+		static Dictionary<string, Importer> importerDict = new Dictionary<string, Importer>();
+
+		/// <summary>
+		/// Register import post-processing
+		/// </summary>
+		static public void RegisterImporter(Importer importer) {
+			if(importerDict.ContainsKey(importer.suffix)) importerDict[importer.suffix] = importer;
+			else importerDict.Add(importer.suffix, importer);
+			// QUESTION: How can conflicts be identified when editing importers?
+		}
 
 		/// <summary>
 		/// Parse exported file name of model or model element
@@ -62,7 +92,7 @@ namespace Reification {
 				--nameIndex;
 			}
 			if(nameIndex > 0) {
-				if(sources.Contains(nameParts[nameIndex])) {
+				if(importerDict.ContainsKey(nameParts[nameIndex])) {
 					source = nameParts[nameIndex];
 					--nameIndex;
 				}
@@ -154,7 +184,6 @@ namespace Reification {
 			modelImporter.importTangents = ModelImporterTangents.None;
 		}
 
-
 		void OnPostprocessMeshHierarchy(GameObject child) {
 			if(!assetPath.StartsWith(importPath)) return;
 			if(importAssets.Contains(assetPath)) return;
@@ -162,55 +191,7 @@ namespace Reification {
 
 			// TEMP: Explicitly break out supported models
 			ParseModelName(assetPath, out _, out _, out string element, out string source, out _);
-			switch(source) {
-			case "3dm_5":
-				Rhino5_MeshHierarchy(child.transform, element);
-				break;
-			case "3dm_6":
-				Rhino6_MeshHierarchy(child.transform, element);
-				break;
-			}
-		}
-
-		static void Rhino_Placeholder(MeshFilter meshFilter) {
-			var sharedMesh = meshFilter.sharedMesh;
-			var vertices = sharedMesh?.vertices;
-			if(vertices == null || vertices.Length != 4) {
-				Debug.LogWarning($"Inconsistent placeholder mesh: {meshFilter.Path()}.{sharedMesh.name}");
-				return;
-			}
-			var placeholder = meshFilter.transform;
-
-			// Derive Rhino transform block basis in world coordinates
-			var origin = placeholder.TransformPoint(vertices[0]);
-			var basisX = placeholder.TransformPoint(vertices[1]) - origin;
-			var basisY = placeholder.TransformPoint(vertices[2]) - origin;
-			var basisZ = placeholder.TransformPoint(vertices[3]) - origin;
-
-			// Rhino -> Unity mesh vertices in local coordinates
-			sharedMesh.vertices = new Vector3[] {
-				placeholder.InverseTransformPoint(origin),
-				placeholder.InverseTransformPoint(new Vector3(-basisX.x, basisX.y, -basisX.z) + origin),
-				placeholder.InverseTransformPoint(new Vector3(-basisZ.x, basisZ.y, -basisZ.z) + origin),
-				placeholder.InverseTransformPoint(new Vector3(-basisY.x, basisY.y, -basisY.z) + origin)
-			};
-		}
-
-		static void Rhino5_MeshHierarchy(Transform child, string element) {
-			// Rotate each layer to be consistent with Rhino6 import
-			child.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f) * child.localRotation;
-
-			if(element == "places") {
-				var meshFilterList = child.GetComponentsInChildren<MeshFilter>();
-				foreach(var meshFilter in meshFilterList) Rhino_Placeholder(meshFilter);
-			}
-		}
-
-		static void Rhino6_MeshHierarchy(Transform child, string element) {
-			if(element == "places") {
-				var meshFilterList = child.GetComponentsInChildren<MeshFilter>();
-				foreach(var meshFilter in meshFilterList) Rhino_Placeholder(meshFilter);
-			}
+			if(importerDict.ContainsKey(source)) importerDict[source].ImportMeshHierarchy(child.transform, element);
 		}
 
 		void OnPostprocessModel(GameObject model) {
@@ -218,10 +199,8 @@ namespace Reification {
 			if(importAssets.Contains(assetPath)) return;
 			Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
 
-			// TODO: In case of places element apply coordinate inversion
-
-			// Strip empty nodes
-			// NOTE: Removing cameras applies to components, but not to their gameObjects
+			// Strip empty GameObjects
+			// NOTE: Removing cameras applies to components, but not to their GameObjects
 			RemoveEmpty(model);
 
 			// Enqueue model for processing during editor update
