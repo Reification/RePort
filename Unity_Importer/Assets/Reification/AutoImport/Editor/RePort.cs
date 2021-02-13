@@ -357,17 +357,13 @@ namespace Reification {
 		static public GameObject ExtractAssets(string modelPath) {
 			ImportTextures(modelPath);
 
+			// Create model prefab and extract material copies
+			var model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
 			var modelPathRoot = modelPath.Substring(0, modelPath.LastIndexOf('.'));
-			var prefabPath = modelPathRoot + ".prefab";
+			GatherAssets.ApplyTo(model, modelPathRoot);
 
-			// Create independent prefab - FIXME: Skip this instantiation... GatherAssets handles it
-			var model = EP.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(modelPath));
-			PrefabUtility.UnpackPrefabInstance(model, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
-			var prefab = PrefabUtility.SaveAsPrefabAsset(model, prefabPath);
-			GatherAssets.ApplyTo(prefab, modelPathRoot);
-			EP.Destroy(model);
-
-			return prefab;
+			// Load prefab created by GatherAssets
+			return AssetDatabase.LoadAssetAtPath<GameObject>(modelPathRoot + ".prefab");
 		}
 
 		/// <summary>

@@ -59,7 +59,7 @@ namespace Reification {
 			if(assetType == PrefabAssetType.Model) {
 				// In the case of a model created an editable prefab
 				var prefab = EP.Instantiate(gameObject);
-				PrefabUtility.UnpackPrefabInstance(prefab, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+				PrefabUtility.UnpackPrefabInstance(prefab, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
 				gameObject = PrefabUtility.SaveAsPrefabAsset(prefab, pathRoot + ".prefab");
 				EP.Destroy(prefab);
 			}
