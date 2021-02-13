@@ -6,11 +6,17 @@ using UnityEngine;
 using UnityEditor;
 
 namespace Reification {
+	/// <summary>
+	/// Replaces placeholder meshes with the corresponding prefabs
+	/// </summary>
+	/// <remarks>
+	/// A placeholder mesh is a tetrahedra whose vertices describe the general linear transform
+	/// that will be applied to the prefab instance that will replace it.
+	/// The transform derivation assumes 4 vertices, in a chiral order that is consistent with Unity.
+	/// </remarks>
 	public class ReplacePrefabs {
 		const string menuItemName = "Reification/Replace Prefabs";
 		const int menuItemPriority = 20;
-
-		// Using ModelImport.importPath
 
 		// IMPORTANT: It should be possible to apply this directly to prefabs
 		// NOTE: There is some risk of recursion - hopefully that throws an error.
@@ -120,15 +126,6 @@ namespace Reification {
 			var basisX = locator.TransformPoint(vertices[1]) - origin;
 			var basisY = locator.TransformPoint(vertices[2]) - origin;
 			var basisZ = locator.TransformPoint(vertices[3]) - origin;
-
-			// FIXME: This should be applied when importing places constituents
-			// Rhino -> Unity basis conversion (match labels, then match directions)
-			var swapX = basisX;
-			var swapY = basisY;
-			var swapZ = basisZ;
-			basisX = new Vector3(-swapX.x, swapX.y, -swapX.z);
-			basisY = new Vector3(-swapZ.x, swapZ.y, -swapZ.z);
-			basisZ = new Vector3(-swapY.x, swapY.y, -swapY.z);
 
 			// TODO: Use SVD to construct transform, which can include shear
 			// TEMP: Assume transform is axial scaling followed by rotation only
