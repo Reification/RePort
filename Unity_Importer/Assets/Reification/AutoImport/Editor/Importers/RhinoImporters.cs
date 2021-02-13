@@ -33,11 +33,11 @@ namespace Reification {
 		public class Rhino5Importer: RePort.Importer {
 			public string suffix { get => "3dm_5"; }
 
-			public void ImportMeshHierarchy(Transform child, string element) {
+			public void ImportMeshHierarchy(Transform child, RePort.Element element) {
 				// Rotate each layer to be consistent with Rhino6 import
 				child.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f) * child.localRotation;
 
-				if(element == "places") {
+				if(element == RePort.Element.places) {
 					var meshFilterList = child.GetComponentsInChildren<MeshFilter>();
 					foreach(var meshFilter in meshFilterList) ImportPlaceholder(meshFilter);
 				}
@@ -52,8 +52,8 @@ namespace Reification {
 		public class Rhino6Importer: RePort.Importer {
 			public string suffix { get => "3dm_6"; }
 
-			public void ImportMeshHierarchy(Transform child, string element) {
-				if(element == "places") {
+			public void ImportMeshHierarchy(Transform child, RePort.Element element) {
+				if(element == RePort.Element.places) {
 					var meshFilterList = child.GetComponentsInChildren<MeshFilter>();
 					foreach(var meshFilter in meshFilterList) ImportPlaceholder(meshFilter);
 				}

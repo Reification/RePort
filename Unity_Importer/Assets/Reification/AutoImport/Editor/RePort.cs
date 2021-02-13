@@ -7,53 +7,42 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 
 namespace Reification {
+	#region static
+
 	public class RePort : AssetPostprocessor {
 		// This preprocessor pertains only to models in this path
 		public const string importPath = "Assets/RePort/";
 
-		// Meshes import includes fixed detail meshes and light sources
-		public const string meshesElement = "meshes";
-
-		// Detail import includes meshes derived from parametric sampling
-		public const string detailElement = "detail"; // Followed by detail level number (e.g. detail0)
-
-		// Instances import will result in prefab replacement
-		public const string placesElement = "places";
-
-		// TODO: Element should be represented using Enum
-
 		/// <summary>
-		/// Import post-processing depending on the export application
+		/// Element type of exported model file
 		/// </summary>
-		public interface Importer {
+		/// <remarks>
+		/// Element names match substrings in file names
+		/// </remarks>
+		public enum Element: int {
 			/// <summary>
-			/// Filename suffix identifying exporting application
+			/// Single file import (default)
 			/// </summary>
-			string suffix { get; }
+			single = 0,
 
 			/// <summary>
-			/// Delegate called from OnPostprocessMeshHierarchy
+			/// Mesh surfaces and lights
+			/// </summary>
+			meshes = 1,
+
+			/// <summary>
+			/// Placeholder tetrahedra for prefab instances
+			/// </summary>
+			places = 2,
+
+			/// <summary>
+			/// Level of detail version for parametric surfaces
 			/// </summary>
 			/// <remarks>
-			/// OnPostprocessMeshHierarchy is called once for each child transform
-			/// of the imported model root transform.
+			/// Multiple detail version may be present can be distinguished
+			/// by integers following the element name (e.g. "detail0")
 			/// </remarks>
-			/// <param name="child">Model child transform being imported</param>
-			/// <param name="element">Model element being importer</param>
-			void ImportMeshHierarchy(Transform child, string element);
-
-			// TODO: Other processing hooks
-		}
-
-		static Dictionary<string, Importer> importerDict = new Dictionary<string, Importer>();
-
-		/// <summary>
-		/// Register import post-processing
-		/// </summary>
-		static public void RegisterImporter(Importer importer) {
-			if(importerDict.ContainsKey(importer.suffix)) importerDict[importer.suffix] = importer;
-			else importerDict.Add(importer.suffix, importer);
-			// QUESTION: How can conflicts be identified when editing importers?
+			detail = 3
 		}
 
 		/// <summary>
@@ -67,14 +56,14 @@ namespace Reification {
 		/// </remarks>
 		/// <param name="assetPath">Path to file, including file name</param>
 		/// <param name="path">The path to the model, will be the same for all elements and constituent models</param>
-		/// <param name="model">The model base name, will be the same for all elements</param>
+		/// <param name="name">The model base name, will be the same for all elements</param>
 		/// <param name="element">Optionally empty: The model element identifier, used to configure import</param>
 		/// <param name="source">Optionally empty: The model source application, used to reconcile coordinates</param>
 		/// <param name="type">The model file type</param>
-		static public void ParseModelName(string assetPath, out string path, out string model, out string element, out string source, out string type) {
+		static public void ParseModelName(string assetPath, out string path, out string name, out Element element, out string source, out string type) {
 			path = "";
-			model = "";
-			element = "";
+			name = "";
+			element = Element.single;
 			source = "";
 			type = "";
 
@@ -98,18 +87,50 @@ namespace Reification {
 				}
 			}
 			if(nameIndex > 0 && source.Length > 0) {
-				if(
-					nameParts[nameIndex].StartsWith(meshesElement) ||
-					nameParts[nameIndex].StartsWith(detailElement) ||
-					nameParts[nameIndex].StartsWith(placesElement)
-				) {
-					element = nameParts[nameIndex];
-					--nameIndex;
-				}
+				if(nameParts[nameIndex].StartsWith(Element.meshes.ToString())) element = Element.meshes;
+				if(nameParts[nameIndex].StartsWith(Element.places.ToString())) element = Element.places;
+				if(nameParts[nameIndex].StartsWith(Element.detail.ToString())) element = Element.detail;
+				if(element != Element.single) --nameIndex;
 			}
-			model = nameParts[0];
-			for(int p = 1; p <= nameIndex; ++p) model += '/' + nameParts[p];
+			name = nameParts[0];
+			for(int p = 1; p <= nameIndex; ++p) name += '/' + nameParts[p];
 		}
+
+		/// <summary>
+		/// Import post-processing depending on the export application
+		/// </summary>
+		public interface Importer {
+			/// <summary>
+			/// Filename suffix identifying exporting application
+			/// </summary>
+			string suffix { get; }
+
+			/// <summary>
+			/// Delegate called from OnPostprocessMeshHierarchy
+			/// </summary>
+			/// <remarks>
+			/// OnPostprocessMeshHierarchy is called once for each child transform
+			/// of the imported model root transform.
+			/// </remarks>
+			/// <param name="child">Model child transform being imported</param>
+			/// <param name="element">Model element being importer</param>
+			void ImportMeshHierarchy(Transform child, Element element);
+
+			// TODO: Other processing hooks
+		}
+
+		static Dictionary<string, Importer> importerDict = new Dictionary<string, Importer>();
+
+		/// <summary>
+		/// Register import post-processing
+		/// </summary>
+		static public void RegisterImporter(Importer importer) {
+			if(importerDict.ContainsKey(importer.suffix)) importerDict[importer.suffix] = importer;
+			else importerDict.Add(importer.suffix, importer);
+			// QUESTION: How can conflicts be identified when editing importers?
+		}
+
+		#endregion
 
 		public RePort() {
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
@@ -124,7 +145,7 @@ namespace Reification {
 			var modelImporter = assetImporter as ModelImporter;
 			ParseModelName(assetPath, out _, out _, out var element, out _, out _);
 			switch(element) {
-			case placesElement:
+			case Element.places:
 				PlacesImporter(modelImporter);
 				break;
 			default:
@@ -190,7 +211,7 @@ namespace Reification {
 			Debug.Log($"RePort.OnPostprocessMeshHierarchy({child.name})\nassetPath = {assetPath}");
 
 			// TEMP: Explicitly break out supported models
-			ParseModelName(assetPath, out _, out _, out string element, out string source, out _);
+			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
 			if(importerDict.ContainsKey(source)) importerDict[source].ImportMeshHierarchy(child.transform, element);
 		}
 
@@ -248,7 +269,7 @@ namespace Reification {
 		static HashSet<string> importAssets = new HashSet<string>();
 
 		// TODO: Progress bar popup
-		// TODO: Check for PIM repeated calls after registration removal... and then prevent it!
+		// FIXME: Check for PIM repeated calls after registration removal... and then prevent it!
 
 		static void ProcessImportedModels() {
 			// There are 3 import types to consider:
@@ -271,12 +292,8 @@ namespace Reification {
 				if(mergePath == importPath.Substring(0, importPath.Length - 1)) {
 					completeModels.Add(model);
 				} else {
-					ParseModelName(modelPath, out _, out _, out string element, out _, out _);
-					if(
-						element.StartsWith(meshesElement) ||
-						element.StartsWith(detailElement) ||
-						element.StartsWith(placesElement)
-					) {
+					ParseModelName(modelPath, out _, out _, out var element, out _, out _);
+					if(element != Element.single) {
 						if(!partialModels.ContainsKey(mergePath)) partialModels.Add(mergePath, new List<GameObject>());
 						partialModels[mergePath].Add(model);
 					} else {
@@ -287,8 +304,6 @@ namespace Reification {
 
 			CombinePartial(partialModels, completeModels);
 			AssembleComplete(completeModels, assembledModels);
-			// TEMP
-			assembledModels.Clear();
 			var configured = ConfigureAssembled(assembledModels);
 
 			// IMPORTANT: importAssets must not be cleared until the import process is complete.
