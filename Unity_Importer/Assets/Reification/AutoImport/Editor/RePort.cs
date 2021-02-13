@@ -152,9 +152,25 @@ namespace Reification {
 				MeshesImporter(modelImporter);
 				break;
 			}
+			ClearRemappedAssets(modelImporter);
 		}
 
-		// Import to enable lightmapping
+		/// <summary>
+		/// Clear all externally remapped assets
+		/// </summary>
+		/// <remarks>
+		/// After gathering materials the model model importer will maintain a remapping.
+		/// This will clear external remappings of every asset in the model, enabling
+		/// reimporting to begin as if the model is new to the project.
+		/// </remarks>
+		static public void ClearRemappedAssets(ModelImporter modelImporter) {
+			var externalObjectMap = modelImporter.GetExternalObjectMap();
+			foreach(var identifier in externalObjectMap.Keys) modelImporter.RemoveRemap(identifier);
+		}
+
+		/// <summary>
+		/// Import configuration to enable lightmapping
+		/// </summary>
 		static public void MeshesImporter(ModelImporter modelImporter) {
 			modelImporter.generateSecondaryUV = true;
 			// CRITICAL: Generation after meshes are extracted is not possible
@@ -180,7 +196,9 @@ namespace Reification {
 			modelImporter.importTangents = ModelImporterTangents.CalculateMikk;
 		}
 
-		// Import to preserve instance information in meshes
+		/// <summary>
+		/// Import to preserve transform information in placeholder meshes
+		/// </summary>
 		static public void PlacesImporter(ModelImporter modelImporter) {
 			modelImporter.generateSecondaryUV = false;
 
