@@ -31,7 +31,7 @@ namespace Reification {
 
 		[InitializeOnLoad]
 		public class Rhino5Importer: RePort.Importer {
-			public string suffix { get => "3dm_5"; }
+			public string exporter { get => "3dm_5"; }
 
 			public void ImportMeshHierarchy(Transform child, RePort.Element element) {
 				// Rotate each layer to be consistent with Rhino6 import
@@ -50,7 +50,7 @@ namespace Reification {
 
 		[InitializeOnLoad]
 		public class Rhino6Importer: RePort.Importer {
-			public string suffix { get => "3dm_6"; }
+			public string exporter { get => "3dm_6"; }
 
 			public void ImportMeshHierarchy(Transform child, RePort.Element element) {
 				if(element == RePort.Element.places) {

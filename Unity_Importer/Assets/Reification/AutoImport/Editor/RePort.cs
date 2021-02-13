@@ -7,8 +7,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 
 namespace Reification {
-	#region static
-
 	public class RePort : AssetPostprocessor {
 		// This preprocessor pertains only to models in this path
 		public const string importPath = "Assets/RePort/";
@@ -58,13 +56,13 @@ namespace Reification {
 		/// <param name="path">The path to the model, will be the same for all elements and constituent models</param>
 		/// <param name="name">The model base name, will be the same for all elements</param>
 		/// <param name="element">Optionally empty: The model element identifier, used to configure import</param>
-		/// <param name="source">Optionally empty: The model source application, used to reconcile coordinates</param>
+		/// <param name="exporter">Optionally empty: The model source application, used to reconcile coordinates</param>
 		/// <param name="type">The model file type</param>
-		static public void ParseModelName(string assetPath, out string path, out string name, out Element element, out string source, out string type) {
+		static public void ParseModelName(string assetPath, out string path, out string name, out Element element, out string exporter, out string type) {
 			path = "";
 			name = "";
 			element = Element.single;
-			source = "";
+			exporter = "";
 			type = "";
 
 			var pathParts = assetPath.Split('/');
@@ -82,11 +80,11 @@ namespace Reification {
 			}
 			if(nameIndex > 0) {
 				if(importerDict.ContainsKey(nameParts[nameIndex])) {
-					source = nameParts[nameIndex];
+					exporter = nameParts[nameIndex];
 					--nameIndex;
 				}
 			}
-			if(nameIndex > 0 && source.Length > 0) {
+			if(nameIndex > 0 && exporter.Length > 0) {
 				if(nameParts[nameIndex].StartsWith(Element.meshes.ToString())) element = Element.meshes;
 				if(nameParts[nameIndex].StartsWith(Element.places.ToString())) element = Element.places;
 				if(nameParts[nameIndex].StartsWith(Element.detail.ToString())) element = Element.detail;
@@ -101,9 +99,9 @@ namespace Reification {
 		/// </summary>
 		public interface Importer {
 			/// <summary>
-			/// Filename suffix identifying exporting application
+			/// Filename suffix identifying exporter application
 			/// </summary>
-			string suffix { get; }
+			string exporter { get; }
 
 			/// <summary>
 			/// Delegate called from OnPostprocessMeshHierarchy
@@ -125,21 +123,19 @@ namespace Reification {
 		/// Register import post-processing
 		/// </summary>
 		static public void RegisterImporter(Importer importer) {
-			if(importerDict.ContainsKey(importer.suffix)) importerDict[importer.suffix] = importer;
-			else importerDict.Add(importer.suffix, importer);
+			if(importerDict.ContainsKey(importer.exporter)) importerDict[importer.exporter] = importer;
+			else importerDict.Add(importer.exporter, importer);
 			// QUESTION: How can conflicts be identified when editing importers?
 		}
 
-		#endregion
-
 		public RePort() {
+			// Ensure that import path exists
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
 		}
 
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
-			if(importAssets.Contains(assetPath)) return;
-			Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
+			//Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
 
 			// Configure import
 			var modelImporter = assetImporter as ModelImporter;
@@ -214,7 +210,7 @@ namespace Reification {
 			modelImporter.isReadable = true;
 			modelImporter.meshCompression = ModelImporterMeshCompression.Off;
 			modelImporter.meshOptimizationFlags = 0;
-			// CRITICAL: Mesh optimization must be disabled in order to preserve
+			// IMPORTANT: Mesh optimization must be disabled in order to preserve
 			// instance data encoded in mesh vertices.
 
 			modelImporter.keepQuads = true;
@@ -225,21 +221,17 @@ namespace Reification {
 
 		void OnPostprocessMeshHierarchy(GameObject child) {
 			if(!assetPath.StartsWith(importPath)) return;
-			if(importAssets.Contains(assetPath)) return;
 			//Debug.Log($"RePort.OnPostprocessMeshHierarchy({child.name})\nassetPath = {assetPath}");
 
-			// TEMP: Explicitly break out supported models
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
 			if(importerDict.ContainsKey(source)) importerDict[source].ImportMeshHierarchy(child.transform, element);
 		}
 
 		void OnPostprocessModel(GameObject model) {
 			if(!assetPath.StartsWith(importPath)) return;
-			if(importAssets.Contains(assetPath)) return;
 			//Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
 
 			// Strip empty GameObjects
-			// NOTE: Removing cameras applies to components, but not to their GameObjects
 			RemoveEmpty(model);
 
 			// Enqueue model for processing during editor update
@@ -254,6 +246,10 @@ namespace Reification {
 		/// <summary>
 		/// Removes all empty branches in the hierarchy of a GameObject
 		/// </summary>
+		/// <remarks>
+		/// Excluding cameras or lights from a model import removes components,
+		/// but their associated GameObjects will persist in the hierarchy.
+		/// </remarks>
 		static public void RemoveEmpty(GameObject gameObject) {
 			// IMPORTANT: Before counting children, apply RemoveEmpty to children
 			// since their removal could result in children being empty
@@ -291,17 +287,13 @@ namespace Reification {
 
 		static void ProcessImportedModels() {
 			// Ensure that ProcessImportedModels is called only once per import batch
-			// IMPORTANT: Unregistering must occur before any possible exception to prevent lockup.
+			// IMPORTANT: Unregistering must occur before any possible import exception
+			// Otherwise the editor will deadlock while repeatedly attempting to import.
 			EditorApplication.update -= ProcessImportedModels;
 
 			// PROBLEM: Unsubscribing from EditorApplication.update is not immediate - multiple callbacks may be received
-			// SOLUTION: Check importAssets count and abort immediately if empty.
-			if(importAssets.Count == 0) {
-				Debug.LogWarning($"GLITCH: RePort.ProcessImportedModels()");
-				return;
-			}
-			var modelPathList = new HashSet<string>(importAssets);
-			importAssets.Clear();
+			// SOLUTION: Abort immediately if importAssets is empty
+			if(importAssets.Count == 0) return;
 			Debug.Log($"RePort.ProcessImportedModels()");
 
 			// There are 3 import types to consider:
@@ -312,7 +304,7 @@ namespace Reification {
 			var completeModels = new List<GameObject>();
 			var assembledModels = new List<GameObject>();
 
-			foreach(var modelPath in modelPathList) {
+			foreach(var modelPath in importAssets) {
 				Debug.Log($"RePort.ProcessImportedModels()\nmodelPath = {modelPath}");
 
 				// TODO: Skip this step for places model element
@@ -333,15 +325,11 @@ namespace Reification {
 					}
 				}
 			}
+			importAssets.Clear();
 
 			CombinePartial(partialModels, completeModels);
 			AssembleComplete(completeModels, assembledModels);
 			var configured = ConfigureAssembled(assembledModels);
-
-			// IMPORTANT: importAssets must not be cleared until the import process is complete.
-			// importAssets abort calls to OnPreprocessModel and OnPostprocessModel
-			// in the case that a model is reimported by a method.
-			importAssets.Clear();
 
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
@@ -355,7 +343,8 @@ namespace Reification {
 		/// ExtractAssets calls ImportTextures - there is no need to call it first.
 		/// </remarks>
 		static public GameObject ExtractAssets(string modelPath) {
-			ImportTextures(modelPath);
+			// IMPORTANT: Textures must be extracted and remapped before materials are extracted
+			ExtractTextures(modelPath);
 
 			// Create model prefab and extract material copies
 			var model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
@@ -376,7 +365,7 @@ namespace Reification {
 		/// Modules/AssetPipelineEditor/ImportSettings/ModelImporterMaterialEditor.cs
 		/// private void ExtractTexturesGUI()
 		/// </remarks>
-		static public void ImportTextures(string modelPath) {
+		static public void ExtractTextures(string modelPath) {
 			var modelImporter = AssetImporter.GetAtPath(modelPath) as ModelImporter;
 			if(modelImporter == null) return;
 
@@ -412,7 +401,7 @@ namespace Reification {
 				AssetDatabase.ImportAsset(modelPath, ImportAssetOptions.ForceSynchronousImport);
 			}
 
-			// TODO: Avoid the pop-up requesting to fix normalmap texture types (ideally by fixing)
+			// TODO: Avoid the pop-up requesting to fix normalmap texture types (ideally by identifying as normalmap)
 		}
 
 		// Combines partial models (meshes and levels of detail and prefab places) into complete models
