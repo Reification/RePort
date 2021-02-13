@@ -139,7 +139,7 @@ namespace Reification {
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
 			if(importAssets.Contains(assetPath)) return;
-			Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
+			//Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
 
 			// Configure import
 			var modelImporter = assetImporter as ModelImporter;
@@ -208,7 +208,7 @@ namespace Reification {
 		void OnPostprocessMeshHierarchy(GameObject child) {
 			if(!assetPath.StartsWith(importPath)) return;
 			if(importAssets.Contains(assetPath)) return;
-			Debug.Log($"RePort.OnPostprocessMeshHierarchy({child.name})\nassetPath = {assetPath}");
+			//Debug.Log($"RePort.OnPostprocessMeshHierarchy({child.name})\nassetPath = {assetPath}");
 
 			// TEMP: Explicitly break out supported models
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
@@ -218,7 +218,7 @@ namespace Reification {
 		void OnPostprocessModel(GameObject model) {
 			if(!assetPath.StartsWith(importPath)) return;
 			if(importAssets.Contains(assetPath)) return;
-			Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
+			//Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
 
 			// Strip empty GameObjects
 			// NOTE: Removing cameras applies to components, but not to their GameObjects
