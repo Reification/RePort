@@ -95,8 +95,12 @@ namespace Reification {
 		}
 
 		/// <summary>
-		/// Import post-processing depending on the export application
+		/// Import post-processing delegates for model exporter application
 		/// </summary>
+		/// <remarks>
+		/// The importer delgates modify the imported model prefab, which is otherwise immutable.
+		/// These methods are intended to complement the application export process.
+		/// </remarks>
 		public interface Importer {
 			/// <summary>
 			/// Filename suffix identifying exporter application
@@ -104,17 +108,33 @@ namespace Reification {
 			string exporter { get; }
 
 			/// <summary>
-			/// Delegate called from OnPostprocessMeshHierarchy
+			/// Transforms and meshes can be modified during this call
 			/// </summary>
 			/// <remarks>
-			/// OnPostprocessMeshHierarchy is called once for each child transform
-			/// of the imported model root transform.
+			/// Called from OnPostprocessMeshHierarchy, which is called once
+			/// for each direct child of the model root transform.
 			/// </remarks>
-			/// <param name="child">Model child transform being imported</param>
-			/// <param name="element">Model element being importer</param>
-			void ImportMeshHierarchy(Transform child, Element element);
+			void ImportHierarchy(Transform hierarchy, Element element);
 
-			// TODO: Other processing hooks
+			/// <summary>
+			/// Material properties can be modified during this call
+			/// </summary>
+			/// <remarks>
+			/// Called from OnPostprocessMaterial so textures are not yet associated.
+			/// </remarks>
+			/// <param name="material">Model material being imported</param>
+			void ImportMaterial(Material material, Element element);
+
+			/// <summary>
+			/// Model components can be modified during this call
+			/// </summary>
+			/// <remarks>
+			/// Called from OnPostprocessModel so 
+			/// Assets created during this call cannot be referenced.
+			/// </remarks>
+			/// <param name="model"></param>
+			/// <param name="element"></param>
+			void ImportModel(GameObject model, Element element);
 		}
 
 		static Dictionary<string, Importer> importerDict = new Dictionary<string, Importer>();
@@ -135,7 +155,7 @@ namespace Reification {
 
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
-			//Debug.Log($"RePort.OnPreprocessModel()\nassetPath = {assetPath}");
+			Debug.Log($"RePort.OnPreprocessModel({assetPath})");
 
 			// Configure import
 			var modelImporter = assetImporter as ModelImporter;
@@ -162,6 +182,9 @@ namespace Reification {
 		static public void ClearRemappedAssets(ModelImporter modelImporter) {
 			var externalObjectMap = modelImporter.GetExternalObjectMap();
 			foreach(var identifier in externalObjectMap.Keys) modelImporter.RemoveRemap(identifier);
+
+			// TODO: Check if remapped assets still exist, clear them if not.
+			// Rename to RemoveMissingAssets
 		}
 
 		/// <summary>
@@ -221,18 +244,29 @@ namespace Reification {
 
 		void OnPostprocessMeshHierarchy(GameObject child) {
 			if(!assetPath.StartsWith(importPath)) return;
-			//Debug.Log($"RePort.OnPostprocessMeshHierarchy({child.name})\nassetPath = {assetPath}");
+			Debug.Log($"RePort.OnPostprocessMeshHierarchy({assetPath}/{child.name})");
 
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
-			if(importerDict.ContainsKey(source)) importerDict[source].ImportMeshHierarchy(child.transform, element);
+			if(importerDict.ContainsKey(source)) importerDict[source].ImportHierarchy(child.transform, element);
+		}
+
+		void OnPostprocessMaterial(Material material) {
+			if(!assetPath.StartsWith(importPath)) return;
+			Debug.Log($"RePort.OnPostprocessMaterial({assetPath}/{material.name})");
+
+			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
+			if(importerDict.ContainsKey(source)) importerDict[source].ImportMaterial(material, element);
 		}
 
 		void OnPostprocessModel(GameObject model) {
 			if(!assetPath.StartsWith(importPath)) return;
-			//Debug.Log($"RePort.OnPostprocessModel({model.name})\nassetPath = {assetPath}");
+			Debug.Log($"RePort.OnPostprocessModel({assetPath})");
 
-			// Strip empty GameObjects
+			// Strip empty GameObjects from hierarchy
 			RemoveEmpty(model);
+
+			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
+			if(importerDict.ContainsKey(source)) importerDict[source].ImportModel(model, element);
 
 			// Enqueue model for processing during editor update
 			// PROBLEM: During import (including during OnPostprocessAllAssets)
@@ -282,9 +316,6 @@ namespace Reification {
 
 		static HashSet<string> importAssets = new HashSet<string>();
 
-		// TODO: Progress bar popup
-		// FIXME: Check for PIM repeated calls after registration removal... and then prevent it!
-
 		static void ProcessImportedModels() {
 			// Ensure that ProcessImportedModels is called only once per import batch
 			// IMPORTANT: Unregistering must occur before any possible import exception
@@ -295,6 +326,9 @@ namespace Reification {
 			// SOLUTION: Abort immediately if importAssets is empty
 			if(importAssets.Count == 0) return;
 			Debug.Log($"RePort.ProcessImportedModels()");
+
+			// TODO: Progress bar popup
+			// FIXME: Check for PIM repeated calls after registration removal... and then prevent it!
 
 			// There are 3 import types to consider:
 			// Partial models, which are in a subfolder of importPath and have a suffix
@@ -340,7 +374,7 @@ namespace Reification {
 		/// </summary>
 		/// <remarks>
 		/// All assets used by model are copied into an adjacent folder.
-		/// ExtractAssets calls ImportTextures - there is no need to call it first.
+		/// ExtractAssets calls ExtractTextures - there is no need to call it first.
 		/// </remarks>
 		static public GameObject ExtractAssets(string modelPath) {
 			// IMPORTANT: Textures must be extracted and remapped before materials are extracted
@@ -359,6 +393,9 @@ namespace Reification {
 		/// Extracts and remaps textures for use by materials
 		/// </summary>
 		/// <remarks>
+		/// IMPORTANT: In order for extracted textures to be remapped to materials
+		/// This must be called when AssetDatabase.StartAssetEditing() does not pertain.
+		/// 
 		/// For the implementation of the "Extract Textures" button 
 		/// in the "Materials" tab of the "Import Settings" Inspector panel, see:
 		/// https://github.com/Unity-Technologies/UnityCsReference/
