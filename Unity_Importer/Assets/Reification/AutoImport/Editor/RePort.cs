@@ -1,6 +1,7 @@
 ﻿// Copyright 2021 Reification Incorporated
 // Licensed under Apache 2.0. All Rights reserved.
 
+using System.IO;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
@@ -155,6 +156,7 @@ namespace Reification {
 
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
+			if(importAssets.Contains(assetPath)) return;
 			Debug.Log($"RePort.OnPreprocessModel({assetPath})");
 
 			// Configure import
@@ -168,6 +170,8 @@ namespace Reification {
 				MeshesImporter(modelImporter);
 				break;
 			}
+
+			// Configure reimport
 			ClearRemappedAssets(modelImporter);
 		}
 
@@ -175,16 +179,27 @@ namespace Reification {
 		/// Clear all externally remapped assets
 		/// </summary>
 		/// <remarks>
-		/// After gathering materials the model model importer will maintain a remapping.
-		/// This will clear external remappings of every asset in the model, enabling
-		/// reimporting to begin as if the model is new to the project.
+		/// After extracting textures and materials the model importer may maintain a remapping.
+		/// The model will attempt to reference these assets during reimport, even if they
+		/// have been deleted.
+		/// ClearRemappedAssets will remove all map entries for assets that do not exist.
 		/// </remarks>
-		static public void ClearRemappedAssets(ModelImporter modelImporter) {
+		/// <param name="force">Remove remap even if external assets exist</param>
+		static public void ClearRemappedAssets(ModelImporter modelImporter, bool force = false) {
 			var externalObjectMap = modelImporter.GetExternalObjectMap();
-			foreach(var identifier in externalObjectMap.Keys) modelImporter.RemoveRemap(identifier);
-
-			// TODO: Check if remapped assets still exist, clear them if not.
-			// Rename to RemoveMissingAssets
+			foreach(var map in externalObjectMap) {
+				var identifier = map.Key;
+				var exists = false;
+				// PROBLEM: path & guid will be defined even if asset no longer exists.
+				// SOLUTION: Use filesystem to check asset exists.
+				var path = AssetDatabase.GetAssetPath(map.Value);
+				if(!force && path != null && path.StartsWith("Assets/")) {
+					path = Application.dataPath + "/" + path.Substring("Assets/".Length);
+					exists = File.Exists(path);
+					if(!exists) Debug.Log($"File path {path} in AssetDatabase does not exist");
+				}
+				if(!exists) modelImporter.RemoveRemap(identifier);
+			}
 		}
 
 		/// <summary>
@@ -244,7 +259,8 @@ namespace Reification {
 
 		void OnPostprocessMeshHierarchy(GameObject child) {
 			if(!assetPath.StartsWith(importPath)) return;
-			Debug.Log($"RePort.OnPostprocessMeshHierarchy({assetPath}/{child.name})");
+			if(importAssets.Contains(assetPath)) return;
+			//Debug.Log($"RePort.OnPostprocessMeshHierarchy({assetPath}/{child.name})");
 
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
 			if(importerDict.ContainsKey(source)) importerDict[source].ImportHierarchy(child.transform, element);
@@ -252,7 +268,8 @@ namespace Reification {
 
 		void OnPostprocessMaterial(Material material) {
 			if(!assetPath.StartsWith(importPath)) return;
-			Debug.Log($"RePort.OnPostprocessMaterial({assetPath}/{material.name})");
+			if(importAssets.Contains(assetPath)) return;
+			//Debug.Log($"RePort.OnPostprocessMaterial({assetPath}/{material.name})");
 
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
 			if(importerDict.ContainsKey(source)) importerDict[source].ImportMaterial(material, element);
@@ -260,6 +277,7 @@ namespace Reification {
 
 		void OnPostprocessModel(GameObject model) {
 			if(!assetPath.StartsWith(importPath)) return;
+			if(importAssets.Contains(assetPath)) return;
 			Debug.Log($"RePort.OnPostprocessModel({assetPath})");
 
 			// Strip empty GameObjects from hierarchy
@@ -325,7 +343,6 @@ namespace Reification {
 			// PROBLEM: Unsubscribing from EditorApplication.update is not immediate - multiple callbacks may be received
 			// SOLUTION: Abort immediately if importAssets is empty
 			if(importAssets.Count == 0) return;
-			Debug.Log($"RePort.ProcessImportedModels()");
 
 			// TODO: Progress bar popup
 			// FIXME: Check for PIM repeated calls after registration removal... and then prevent it!
@@ -339,7 +356,7 @@ namespace Reification {
 			var assembledModels = new List<GameObject>();
 
 			foreach(var modelPath in importAssets) {
-				Debug.Log($"RePort.ProcessImportedModels()\nmodelPath = {modelPath}");
+				Debug.Log($"RePort.ProcessImportedModels(): modelPath = {modelPath}");
 
 				// TODO: Skip this step for places model element
 				// Extract all assets from each imported model
@@ -394,7 +411,11 @@ namespace Reification {
 		/// </summary>
 		/// <remarks>
 		/// IMPORTANT: In order for extracted textures to be remapped to materials
-		/// This must be called when AssetDatabase.StartAssetEditing() does not pertain.
+		/// this must be called when AssetDatabase.StartAssetEditing() does not pertain
+		/// so that textures can be synchronously imported for remapping.
+		/// 
+		/// WARNING: In order to update model materials the model will be remiported,
+		/// so if import triggers this call recursion must be prevented.
 		/// 
 		/// For the implementation of the "Extract Textures" button 
 		/// in the "Materials" tab of the "Import Settings" Inspector panel, see:
@@ -413,8 +434,9 @@ namespace Reification {
 				modelImporter.ExtractTextures(texturesPath);
 			} finally {
 				AssetDatabase.StopAssetEditing();
+				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+				// Import textures to AssetDatabase
 			}
-			AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
 			// If no textures were imported remove folder & skip the reimport
 			// NOTE: ExtractTextures will only create the texturesPath if there are textures to be extracted
@@ -436,6 +458,7 @@ namespace Reification {
 			} finally {
 				AssetDatabase.StopAssetEditing();
 				AssetDatabase.ImportAsset(modelPath, ImportAssetOptions.ForceSynchronousImport);
+				// Update model materials with texture remapping.
 			}
 
 			// TODO: Avoid the pop-up requesting to fix normalmap texture types (ideally by identifying as normalmap)
