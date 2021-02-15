@@ -159,20 +159,24 @@ namespace Reification {
 			if(importAssets.Contains(assetPath)) return;
 			Debug.Log($"RePort.OnPreprocessModel({assetPath})");
 
-			// Configure import
 			var modelImporter = assetImporter as ModelImporter;
-			ParseModelName(assetPath, out _, out _, out var element, out _, out _);
-			switch(element) {
-			case Element.places:
-				PlacesImporter(modelImporter);
-				break;
-			default:
-				MeshesImporter(modelImporter);
-				break;
+			if(modelImporter.importSettingsMissing) {
+				// Configure import
+				ParseModelName(assetPath, out _, out _, out var element, out _, out _);
+				switch(element) {
+				case Element.places:
+					PlacesImporter(modelImporter);
+					break;
+				default:
+					MeshesImporter(modelImporter);
+					break;
+				}
+			} else {
+				// Configure reimport
+				ClearRemappedAssets(modelImporter);
+				// FIXME: Selection revelas model in inspect, so if any external object mapping is removed
+				// it will trigger a pop-up asking whether to apply or revert changes to import settings
 			}
-
-			// Configure reimport
-			ClearRemappedAssets(modelImporter);
 		}
 
 		/// <summary>
