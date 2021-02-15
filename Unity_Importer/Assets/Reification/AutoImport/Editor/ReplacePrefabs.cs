@@ -93,7 +93,6 @@ namespace Reification {
 			}
 		}
 
-
 		static Dictionary<string, CachedPrefab> GetPrefabs(string searchRoot) {
 			var prefabs = new Dictionary<string, CachedPrefab>();
 
@@ -108,6 +107,13 @@ namespace Reification {
 			return prefabs;
 		}
 
+		/// <summary>
+		/// Name of prefab that replaces placeholder
+		/// </summary>
+		/// <remarks>
+		/// Every '=' is removed from name in order to prevent attempted replacement during reimport
+		/// </remarks>
+		static public string ReplaceName(string name) => name.Replace('=', '-');
 
 		// Model export generates meshes in world coordinates
 		// In order to retain information, each prefab is replaced with a transformed tetrahedron
@@ -117,11 +123,20 @@ namespace Reification {
 			// the vertex array can be reordered, and vertices may be replicated up to 3 times
 			// to support a normal vector for each assocaited triangle.
 			var meshFilter = locator.GetComponent<MeshFilter>();
-			if(!meshFilter) return;
+			if(!meshFilter) {
+				Debug.Log($"ReplacePrefab({locator.Path()}) missing MeshFilter");
+				return;
+			}
 			Mesh sharedMesh = meshFilter.sharedMesh;
-			if(!sharedMesh) return;
+			if(!sharedMesh) {
+				Debug.Log($"ReplacePrefab({locator.Path()}) missing sharedMesh");
+				return;
+			}
 			var vertices = sharedMesh.vertices;
-			if(vertices == null || vertices.Length != 4) return;
+			if(vertices == null || vertices.Length != 4) {
+				Debug.Log($"ReplacePrefab({locator.Path()}) incorrect vertext count {vertices?.Length ?? 0}");
+				return;
+			}
 
 			// Derive basis in world coordinates
 			var origin = locator.TransformPoint(vertices[0]);
@@ -133,8 +148,7 @@ namespace Reification {
 			// TEMP: Assume transform is axial scaling followed by rotation only
 			// NOTE: The origin and bases are simply the columns of an affine (3x4) transform matrix
 			var prefab = (PrefabUtility.InstantiatePrefab(cached.prefab) as GameObject).transform;
-			prefab.name = locator.name.Replace('=','-');
-			// IMPORTANT: The '=' must be removed to prevent attempted replacement during reimport
+			prefab.name = ReplaceName(locator.name);
 			prefab.localScale = new Vector3(basisX.magnitude, basisY.magnitude, basisZ.magnitude);
 			prefab.rotation = Quaternion.LookRotation(basisZ, basisY);
 			prefab.position = origin;
@@ -145,14 +159,20 @@ namespace Reification {
 
 		static void ReplaceMatchedPrefabs(string prefabPath, GameObject gameObject) {
 			Dictionary<string, CachedPrefab> prefabs = GetPrefabs(prefabPath);
-			var children = gameObject.transform.Children(true);
+			var children = gameObject.Children(true);
 			foreach(var child in children) {
 				var name_parts = child.name.Split('=');
 				if(name_parts.Length == 1) continue;
-				// TODO: String _# suffix added by FBX names (do this on import)
-				// If name_parts[1] is non-zero (after stripping) use that, else use name_parts[0]
-				if(prefabs.TryGetValue(name_parts[0], out var cached)) ReplacePrefab(child.transform, cached);
-				else Debug.LogWarning($"Missing prefab for {gameObject.name} place holder {child.Path()}");
+				if(prefabs.TryGetValue(name_parts[0], out var cached)) {
+					// When reimporting remove previous instances
+					// ASSUME: Each placeholder and prefab has a unique name
+					string replaceName = ReplaceName(child.name);
+					var replaceList = child.transform.parent.NameFindInChildren(replaceName);
+					if(replaceList.Length == 0) ReplacePrefab(child.transform, cached);
+					else EP.Destroy(child);
+				} else {
+					Debug.LogWarning($"Missing prefab for {gameObject.name} place holder {child.Path()}");
+				}
 			}
 		}
 	}
