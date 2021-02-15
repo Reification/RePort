@@ -117,8 +117,10 @@ namespace Reification {
 			// the vertex array can be reordered, and vertices may be replicated up to 3 times
 			// to support a normal vector for each assocaited triangle.
 			var meshFilter = locator.GetComponent<MeshFilter>();
-			var sharedMesh = meshFilter?.sharedMesh;
-			var vertices = sharedMesh?.vertices;
+			if(!meshFilter) return;
+			Mesh sharedMesh = meshFilter.sharedMesh;
+			if(!sharedMesh) return;
+			var vertices = sharedMesh.vertices;
 			if(vertices == null || vertices.Length != 4) return;
 
 			// Derive basis in world coordinates
@@ -131,12 +133,12 @@ namespace Reification {
 			// TEMP: Assume transform is axial scaling followed by rotation only
 			// NOTE: The origin and bases are simply the columns of an affine (3x4) transform matrix
 			var prefab = (PrefabUtility.InstantiatePrefab(cached.prefab) as GameObject).transform;
-			if(locator.name.Length > 0) prefab.name = locator.name;
+			prefab.name = locator.name.Replace('=','-');
+			// IMPORTANT: The '=' must be removed to prevent attempted replacement during reimport
 			prefab.localScale = new Vector3(basisX.magnitude, basisY.magnitude, basisZ.magnitude);
 			prefab.rotation = Quaternion.LookRotation(basisZ, basisY);
 			prefab.position = origin;
 			EP.SetParent(prefab, locator.parent);
-			// IMPORTANT: place meshes defined world coordinates
 
 			EP.Destroy(locator.gameObject);
 		}
