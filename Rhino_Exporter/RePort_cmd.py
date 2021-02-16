@@ -40,6 +40,12 @@ def safe_file_name(name):
     name = name.replace('*', "")
     return name
 
+# Remove unsafe characters from block name
+def safe_block_name(name):
+    name = safe_file_name(name)
+    name = name.replace("=", "-")
+    return name
+
 # Rhino export looks at filename suffix to determine format
 # Unity import looks for suffix to determined format,
 # and at names before suffix to determine provenance.
@@ -169,7 +175,7 @@ def ExportBlock(path, name, detail=0):
     file_name = os.path.join(path, name + save_sufix())
     rs.Command(
         "-BlockManager Export " +\
-        '"' + block_id + '" ' +\
+        '"' + name + '" ' +\
         save_options() +\
         '"' + file_name + '" ' +\
         fbx_options() + "Enter " +\
@@ -246,10 +252,11 @@ def Placeholder(instance, scale):
     )
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
-    name = rs.ObjectName(instance)
-    if name is None:
-        name = ""
-    rs.ObjectName(placeholder, rs.BlockInstanceName(instance) + "=" + name)
+    objectName = rs.ObjectName(instance)
+    if objectName is None:
+        objectName = ""
+    blockName = safe_block_name(rs.BlockInstanceName(instance))
+    rs.ObjectName(placeholder, objectName + "=" + blockName)
     rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
     return placeholder
 
@@ -315,7 +322,7 @@ def ExportSelected(scale, path, name):
             # On import contents of block will be merged,
             # and will then replace placeholders in scene and other blocks
             block = rs.BlockInstanceName(object)
-            block_name = safe_file_name(block)
+            block_name = safe_block_name(block)
             block_path = os.path.join(path, block_name)
             block_done = False
             try:
