@@ -15,9 +15,13 @@ namespace Reification {
 
 		float iniHeight = 0f;
 
+		CharacterController controller;
+
 		// Start is called before the first frame update
 		void Start() {
 			iniHeight = transform.localPosition.y;
+			controller = GetComponentInParent<CharacterController>();
+
 			SetHeight(iniHeight);
 		}
 
@@ -32,6 +36,9 @@ namespace Reification {
 			var localPosition = transform.localPosition;
 			localPosition.y = Mathf.Clamp(height, minHeight, maxHeight);
 			transform.localPosition = localPosition;
+
+			controller.height = height + controller.radius;
+			controller.center = new Vector3(0f, controller.height / 2f, 0f);
 		}
 	}
 }
