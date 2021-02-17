@@ -26,12 +26,17 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Editor/AutoScene.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightProbes.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightmaps.cs",
-			"Assets/Reification/AutoImport/Settings/FastLightmaps.giparams",
+			"Assets/Reification/AutoImport/Editor/Importers/RhinoImporters.cs",
 			"Assets/Reification/AutoImport/Shaders/StandardCrossfade.shader",
+			"Assets/Reification/AutoImport/Settings/FastLightmaps.giparams",
+
 			"Assets/Reification/AutoImport/Scripts/DragCamera.cs",
 			"Assets/Reification/AutoImport/Scripts/MovePlayer.cs",
+			"Assets/Reification/AutoImport/Scripts/ScrollHeight.cs",
 			"Assets/Reification/AutoImport/Scripts/SunColor.cs",
 			"Assets/Reification/AutoImport/Scripts/SunOrbit.cs",
+			"Assets/Reification/AutoImport/Scripts/KeyToggleActive.cs",
+			"Assets/Reification/AutoImport/Scripts/KeyToggleEnabled.cs",
 			"Assets/Reification/AutoImport/Prefabs/Player.prefab",
 			"Assets/Reification/AutoImport/Prefabs/Sun.prefab",
 
