@@ -84,15 +84,6 @@ namespace Reification {
 			return match;
 		}
 
-		// TODO: PathMatchStart to find save location.
-		// TODO: These should all be moved elsewhere... maybe near SafeName?
-
-		static public string NamesMatchStart(params GameObject[] gameObjects) {
-			var nameList = new string[gameObjects.Length];
-			for(var n = 0; n < gameObjects.Length; ++n) nameList[n] = gameObjects[n].name;
-			return MatchStart(nameList);
-		}
-
 		// PROBLEM: If multiple intermediate levels of the hierarchy have the same name
 		// then children will be randomly assigned. This could happen if Av0 has children,
 		// Av1 does not and is added, but then Av2 has children, which could be parented to

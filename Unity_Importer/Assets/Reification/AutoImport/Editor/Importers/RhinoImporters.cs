@@ -31,17 +31,21 @@ namespace Reification {
 
 		[InitializeOnLoad]
 		public class Rhino5Importer: RePort.Importer {
-			public string suffix { get => "3dm_5"; }
+			public string exporter { get => "3dm_5"; }
 
-			public void ImportMeshHierarchy(Transform child, RePort.Element element) {
+			public void ImportHierarchy(Transform hierarchy, RePort.Element element) {
 				// Rotate each layer to be consistent with Rhino6 import
-				child.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f) * child.localRotation;
+				hierarchy.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f) * hierarchy.localRotation;
 
 				if(element == RePort.Element.places) {
-					var meshFilterList = child.GetComponentsInChildren<MeshFilter>();
+					var meshFilterList = hierarchy.GetComponentsInChildren<MeshFilter>();
 					foreach(var meshFilter in meshFilterList) ImportPlaceholder(meshFilter);
 				}
 			}
+
+			public void ImportMaterial(Material material, RePort.Element element) { }
+
+			public void ImportModel(GameObject model, RePort.Element element) { }
 
 			static Rhino5Importer() {
 				RePort.RegisterImporter(new Rhino5Importer());
@@ -50,14 +54,18 @@ namespace Reification {
 
 		[InitializeOnLoad]
 		public class Rhino6Importer: RePort.Importer {
-			public string suffix { get => "3dm_6"; }
+			public string exporter { get => "3dm_6"; }
 
-			public void ImportMeshHierarchy(Transform child, RePort.Element element) {
+			public void ImportHierarchy(Transform hierarchy, RePort.Element element) {
 				if(element == RePort.Element.places) {
-					var meshFilterList = child.GetComponentsInChildren<MeshFilter>();
+					var meshFilterList = hierarchy.GetComponentsInChildren<MeshFilter>();
 					foreach(var meshFilter in meshFilterList) ImportPlaceholder(meshFilter);
 				}
 			}
+
+			public void ImportMaterial(Material material, RePort.Element element) { }
+
+			public void ImportModel(GameObject model, RePort.Element element) { }
 
 			static Rhino6Importer() {
 				RePort.RegisterImporter(new Rhino6Importer());
