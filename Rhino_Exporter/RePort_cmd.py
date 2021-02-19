@@ -61,8 +61,9 @@ def save_suffix():
 # NOTE: Unrecognized commands are interpreted as filename!
 # When running Rhino5 entering Version=6 saves "Version=6.3dm"
 def save_options():
+    # https://docs.mcneel.com/rhino/7/help/en-us/commands/save.htm
     # https://docs.mcneel.com/rhino/6/help/en-us/commands/save.htm
-    if version == 6:
+    if version == 7 or version == 6:
         return \
             "Version=6 "\
             "SaveTextures=Yes "\
@@ -83,6 +84,16 @@ def save_options():
 # FBX export options targeting Unity's import process
 # NOTE: Enter exits fbx options
 def fbx_options():
+    # https://docs.mcneel.com/rhino/7/help/en-us/fileio/motionbuilder_fbx_import_export.htm
+    if version == 7:
+        return \
+            "ExportFileAs=Version7Binary "\
+            "ExportNurbsObjectsAs=Mesh "\
+            "ExportMaterialsAs=Lambert "\
+            "YUp=No "\
+            "ExportVertexNormals=Yes "\
+            "ExportLights=Yes "\
+            "ExportViews=No "
     # https://docs.mcneel.com/rhino/6/help/en-us/fileio/motionbuilder_fbx_import_export.htm
     if version == 6:
         return \
@@ -103,6 +114,7 @@ def fbx_options():
 
 # Parametric Surface Meshing Options
 # https://wiki.mcneel.com/rhino/meshsettings
+# https://docs.mcneel.com/rhino/7/help/en-us/popup_moreinformation/polygon_mesh_detailed_options.htm
 def MeshingOptions(detail):
     meshing_options = " PolygonDensity=0 "
     if detail == 0:
@@ -117,6 +129,7 @@ def MeshingOptions(detail):
             "SimplePlane=Yes "\
             "Refine=Yes "\
             "PackTextures=No "
+    #FIXME: Rhino7 adds SubdivisionLevel=4 and SubdivisionContext=Absolute
     if detail == 0:
         meshing_options += "AdvancedOptions "\
             "Angle=15 "\
@@ -395,7 +408,7 @@ def GetExportPath(is_interactive):
 # TODO: Find a way to not register scene changes
 
 def RunCommand(is_interactive):
-    if not (version == 5 or version == 6):
+    if not (version == 7 or version == 6 or version == 5):
         print(__commandname__ + ": does not support Rhino version " + str(version) + " -> abort")
         return
     
