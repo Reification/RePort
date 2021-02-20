@@ -386,33 +386,27 @@ namespace Reification {
 				var newPath = "Assets/" + assetPath + "/" + asset.name + assetSuffix;
 				newPath = AssetDatabase.GenerateUniqueAssetPath(newPath);
 
-				if(AssetDatabase.IsSubAsset(asset)) {
-					// Extract asset at new path
-					AssetDatabase.ExtractAsset(asset, newPath);
-				} else {
-					// Copy asset to new path
-					if(asset is GameObject) {
-						var gameObject = asset as GameObject;
-						if(PrefabUtility.GetPrefabAssetType(gameObject) == PrefabAssetType.NotAPrefab) {
-							assetCopy = PrefabUtility.SaveAsPrefabAsset(gameObject, newPath) as T;
-						} else {
-							// NOTE: PrefabUtility.SaveAsPrefabAsset cannot save an asset reference as a prefab
-							var copyObject = PrefabUtility.InstantiatePrefab(gameObject) as GameObject;
-							// NOTE: Root must be unpacked, otherwise this will yield a prefab variant
-							PrefabUtility.UnpackPrefabInstance(copyObject, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
-							assetCopy = PrefabUtility.SaveAsPrefabAsset(copyObject, newPath) as T;
-							EP.Destroy(copyObject);
-						}
+				// Copy asset to new path
+				// NOTE: The goal is to keep the original asset in place, 
+				// so AssetDatabase.ExtractAsset is not used.
+				if(asset is GameObject) {
+					var gameObject = asset as GameObject;
+					if(PrefabUtility.GetPrefabAssetType(gameObject) == PrefabAssetType.NotAPrefab) {
+						assetCopy = PrefabUtility.SaveAsPrefabAsset(gameObject, newPath) as T;
 					} else {
-						var oldPath = AssetDatabase.GetAssetPath(asset);
-						if(oldPath != null && oldPath.Length > 0) {
-							// IMPORTANT: CopyAsset will retain file type for image and model assets
-							AssetDatabase.CopyAsset(oldPath, newPath);
-						} else {
-							// NOTE: CreateAsset will fail when object already references an asset
-							AssetDatabase.CreateAsset(asset, newPath);
-						}
+						// NOTE: PrefabUtility.SaveAsPrefabAsset cannot save an asset reference as a prefab
+						var copyObject = PrefabUtility.InstantiatePrefab(gameObject) as GameObject;
+						// NOTE: Root must be unpacked, otherwise this will yield a prefab variant
+						PrefabUtility.UnpackPrefabInstance(copyObject, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
+						assetCopy = PrefabUtility.SaveAsPrefabAsset(copyObject, newPath) as T;
+						EP.Destroy(copyObject);
 					}
+				} else {
+					// IMPORTANT: SubAssets must be instantiated, otherise AssetDatabase.CreateAsset(asset, newPath) will fail 
+					// with error: "Couldn't add object to asset file because the Mesh [] is already an asset at [].fbx"
+					// NOTE: AssetDatabase.ExtractAsset will register as a modification of model import settings
+					if(AssetDatabase.IsSubAsset(asset)) AssetDatabase.CreateAsset(Object.Instantiate(asset), newPath);
+					else AssetDatabase.CopyAsset(AssetDatabase.GetAssetPath(asset), newPath);
 				}
 				assetCopy = AssetDatabase.LoadAssetAtPath<T>(newPath);
 #endif

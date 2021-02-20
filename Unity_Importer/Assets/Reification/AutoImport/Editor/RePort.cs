@@ -349,7 +349,6 @@ namespace Reification {
 			if(importAssets.Count == 0) return;
 
 			// TODO: Progress bar popup
-			// FIXME: Check for PIM repeated calls after registration removal... and then prevent it!
 
 			// There are 3 import types to consider:
 			// Partial models, which are in a subfolder of importPath and have a suffix
