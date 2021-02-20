@@ -346,7 +346,7 @@ namespace Reification {
 		/// </summary>
 		/// <remarks>
 		/// If the specified path does not exist, it will be created using EP.CreatePersistentPath.
-		/// The asset name will be the name of the asset object.
+		/// The asset name will be a unique derivative of the name of the asset object.
 		/// If assetSuffix is not specified the suffix corresponding to the asset type will be used.
 		/// 
 		/// WARNING: When AssetDatabase.StartAssetEditing() has been called, AssetDatabase.CopyAsset
@@ -385,6 +385,7 @@ namespace Reification {
 				}
 				var newPath = "Assets/" + assetPath + "/" + asset.name + assetSuffix;
 				newPath = AssetDatabase.GenerateUniqueAssetPath(newPath);
+				// WARNING: (Unity2019.4 undocumented) AssetDatabase.GenerateUniqueAssetPath will trim name spaces
 
 				// Copy asset to new path
 				// NOTE: The goal is to keep the original asset in place, 

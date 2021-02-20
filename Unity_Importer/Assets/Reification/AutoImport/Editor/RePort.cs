@@ -156,8 +156,8 @@ namespace Reification {
 
 		void OnPreprocessModel() {
 			if(!assetPath.StartsWith(importPath)) return;
-			if(importAssets.Contains(assetPath)) return;
 			Debug.Log($"RePort.OnPreprocessModel({assetPath})");
+			if(importAssets.Contains(assetPath)) return;
 
 			var modelImporter = assetImporter as ModelImporter;
 			if(modelImporter.importSettingsMissing) {
@@ -200,7 +200,6 @@ namespace Reification {
 				if(!force && path != null && path.StartsWith("Assets/")) {
 					path = Application.dataPath + "/" + path.Substring("Assets/".Length);
 					exists = File.Exists(path);
-					if(!exists) Debug.Log($"File path {path} in AssetDatabase does not exist");
 				}
 				if(!exists) modelImporter.RemoveRemap(identifier);
 			}
@@ -261,19 +260,41 @@ namespace Reification {
 			modelImporter.importTangents = ModelImporterTangents.None;
 		}
 
-		void OnPostprocessMeshHierarchy(GameObject child) {
+		// TODO: Move SafeAssetName to a string extension collection
+
+		/// <summary>
+		/// Make asset name safe for future processing and extraction
+		/// </summary>
+		static public string SafeAssetName(string assetName) {
+			// Remove leading and trailing spaces
+			// NOTE: (Unity2019.4 undocumented) AssetDatabase.GenerateUniqueAssetPath will trim name spaces
+			var trimChars = new char[] { ' ' };
+			assetName = assetName.Trim(trimChars);
+			// Remove transform hierarchy separators from names
+			assetName = assetName.Replace("/","");
+			// TODO: Reduce to safe file name, so that asset can be separately exported
+			return assetName;
+		}
+
+		void OnPostprocessMeshHierarchy(GameObject hierarchy) {
 			if(!assetPath.StartsWith(importPath)) return;
+			Debug.Log($"RePort.OnPostprocessMeshHierarchy({assetPath}/{hierarchy.name})");
+
+			// NOTE: GameObjects cannot be renamed until OnPostprocessModel
+			foreach(var meshFilter in hierarchy.GetComponentsInChildren<MeshFilter>()) meshFilter.sharedMesh.name = SafeAssetName(meshFilter.sharedMesh.name);
+
 			if(importAssets.Contains(assetPath)) return;
-			//Debug.Log($"RePort.OnPostprocessMeshHierarchy({assetPath}/{child.name})");
 
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
-			if(importerDict.ContainsKey(source)) importerDict[source].ImportHierarchy(child.transform, element);
+			if(importerDict.ContainsKey(source)) importerDict[source].ImportHierarchy(hierarchy.transform, element);
 		}
 
 		void OnPostprocessMaterial(Material material) {
 			if(!assetPath.StartsWith(importPath)) return;
+			Debug.Log($"RePort.OnPostprocessMaterial({assetPath}/{material.name})");
 			if(importAssets.Contains(assetPath)) return;
-			//Debug.Log($"RePort.OnPostprocessMaterial({assetPath}/{material.name})");
+
+			material.name = SafeAssetName(material.name);
 
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
 			if(importerDict.ContainsKey(source)) importerDict[source].ImportMaterial(material, element);
@@ -281,8 +302,11 @@ namespace Reification {
 
 		void OnPostprocessModel(GameObject model) {
 			if(!assetPath.StartsWith(importPath)) return;
-			if(importAssets.Contains(assetPath)) return;
 			Debug.Log($"RePort.OnPostprocessModel({assetPath})");
+
+			foreach(var child in model.Children(true)) child.name = SafeAssetName(child.name);
+
+			if(importAssets.Contains(assetPath)) return;
 
 			// Strip empty GameObjects from hierarchy
 			RemoveEmpty(model);
@@ -326,7 +350,7 @@ namespace Reification {
 				}
 			}
 
-			// Remove if no children and no components
+			// Remove if no children and no components other than transform
 			if(
 				gameObject.transform.childCount == 0 &&
 				gameObject.GetComponents<Component>().Length == 1
@@ -357,29 +381,40 @@ namespace Reification {
 			var partialModels = new Dictionary<string, List<GameObject>>();
 			var completeModels = new List<GameObject>();
 			var assembledModels = new List<GameObject>();
+			var success = true;
+			try {
+				foreach(var modelPath in importAssets) {
+					Debug.Log($"RePort.ProcessImportedModels(): modelPath = {modelPath}");
 
-			foreach(var modelPath in importAssets) {
-				Debug.Log($"RePort.ProcessImportedModels(): modelPath = {modelPath}");
+					// TODO: Skip this step for places model element
+					// Extract all assets from each imported model
+					var model = ExtractAssets(modelPath);
 
-				// TODO: Skip this step for places model element
-				// Extract all assets from each imported model
-				var model = ExtractAssets(modelPath);
-
-				// Classify models according to path and suffix
-				var mergePath = modelPath.Substring(0, modelPath.LastIndexOf('/'));
-				if(mergePath == importPath.Substring(0, importPath.Length - 1)) {
-					completeModels.Add(model);
-				} else {
-					ParseModelName(modelPath, out _, out _, out var element, out _, out _);
-					if(element != Element.single) {
-						if(!partialModels.ContainsKey(mergePath)) partialModels.Add(mergePath, new List<GameObject>());
-						partialModels[mergePath].Add(model);
-					} else {
+					// Classify models according to path and suffix
+					var mergePath = modelPath.Substring(0, modelPath.LastIndexOf('/'));
+					if(mergePath == importPath.Substring(0, importPath.Length - 1)) {
 						completeModels.Add(model);
+					} else {
+						ParseModelName(modelPath, out _, out _, out var element, out _, out _);
+						if(element != Element.single) {
+							if(!partialModels.ContainsKey(mergePath)) partialModels.Add(mergePath, new List<GameObject>());
+							partialModels[mergePath].Add(model);
+						} else {
+							completeModels.Add(model);
+						}
 					}
 				}
+			} catch (System.Exception e) {
+				Debug.LogError($"ProcessImportedModels failed with error:\n{e.Message}");
+				success = false;
+			} finally {
+				// IMPORTANT: Unblock future imports even if this import failed
+				importAssets.Clear();
 			}
-			importAssets.Clear();
+			if(!success) return;
+
+			// TEMP
+			return;
 
 			CombinePartial(partialModels, completeModels);
 			AssembleComplete(completeModels, assembledModels);
@@ -461,10 +496,14 @@ namespace Reification {
 			} finally {
 				AssetDatabase.StopAssetEditing();
 				AssetDatabase.ImportAsset(modelPath, ImportAssetOptions.ForceSynchronousImport);
-				// Update model materials with texture remapping.
+				// IMPORTANT: Update model materials with texture remapping.
 			}
 
+			// CRITICAL PROBLEM: Reimporting the model removes the previously applied name changes (mesh and transform changes seem to persist)
+
 			// TODO: Avoid the pop-up requesting to fix normalmap texture types (ideally by identifying as normalmap)
+			// https://docs.unity3d.com/ScriptReference/AssetPostprocessor.OnPreprocessTexture.html
+			// This will require reimporting assets with settings configured for each asset.
 		}
 
 		// Combines partial models (meshes and levels of detail and prefab places) into complete models
