@@ -142,7 +142,10 @@ namespace Reification {
 				var shaderTextures = GetStandardMaterialTextures(material);
 				foreach(var shaderTexture in shaderTextures) {
 					var texture = shaderTexture.Value;
-					if(!textureAssets.ContainsKey(texture.name)) continue;
+					if(!textureAssets.ContainsKey(texture.name)) {
+						Debug.LogWarning($"Missing Texture {texture.name}");
+						continue;
+					}
 					texture = textureAssets[texture.name];
 					if(!material) {
 						Debug.LogWarning($"Created texture {texture.name} could not be loaded -> stop editing assets, then reconstruct TextureGatherer");
@@ -186,7 +189,10 @@ namespace Reification {
 				for(var m = 0; m < sharedMaterials.Length; ++m) {
 					var material = sharedMaterials[m];
 					if(!material) continue;
-					if(!materialAssets.ContainsKey(material.name)) continue;
+					if(!materialAssets.ContainsKey(material.name)) {
+						Debug.LogWarning($"Missing Material {material.name}");
+						continue;
+					}
 					material = materialAssets[material.name];
 					if(!material) {
 						Debug.LogWarning($"Created material {material.name} could not be loaded -> stop editing assets, then reconstruct MaterialGatherer");
@@ -232,6 +238,9 @@ namespace Reification {
 
 			public void CopyMeshes(MeshFilter meshFilter) {
 				var mesh = meshFilter.sharedMesh;
+				if(mesh.name.StartsWith("Surface")) {
+					Debug.Log($"Copying mesh {mesh.name}");
+				}
 				reduceMeshName(mesh);
 				if(
 					meshAssets.ContainsKey(mesh.name) &&
@@ -249,10 +258,13 @@ namespace Reification {
 			public void SwapMeshes(MeshFilter meshFilter) {
 				var mesh = meshFilter.sharedMesh;
 				reduceMeshName(mesh);
-				if(
-					!meshAssets.ContainsKey(mesh.name) ||
-					!meshAssets[mesh.name].ContainsKey(mesh.vertexCount)
-				) return;
+				if(!(
+					meshAssets.ContainsKey(mesh.name) &&
+					meshAssets[mesh.name].ContainsKey(mesh.vertexCount)
+				)) {
+					Debug.LogWarning($"Missing Mesh {mesh.name} with vertexCount = {mesh.vertexCount}");
+					return;
+				}
 				mesh = meshAssets[mesh.name][mesh.vertexCount];
 				if(!mesh) {
 					Debug.LogWarning($"Created mesh {mesh.name} could not be loaded -> stop editing assets, then reconstruct MeshGatherer");
@@ -273,6 +285,10 @@ namespace Reification {
 				var prefabGUIDs = AssetDatabase.FindAssets("t:GameObject", new[] { prefabPath });
 				foreach(var guid in prefabGUIDs) {
 					var asset = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid));
+					if(!asset) {
+						Debug.LogWarning($"Created prefab {prefabPath} could not be loaded -> stop editing assets, then reconstruct PrefabGatherer");
+						continue;
+					}
 					prefabAssets.Add(asset.name, asset);
 				}
 			}
@@ -295,12 +311,11 @@ namespace Reification {
 				foreach(var child in children) {
 					if(PrefabUtility.GetPrefabAssetType(child.gameObject) == PrefabAssetType.NotAPrefab) continue;
 					var prefab = PrefabUtility.GetCorrespondingObjectFromSource<GameObject>(child.gameObject);
-					if(!prefabAssets.ContainsKey(prefab.name)) continue;
-					prefab = prefabAssets[prefab.name];
-					if(!prefab) {
-						Debug.LogWarning($"Created prefab {prefab.name} could not be loaded -> stop editing assets, then reconstruct PrefabGatherer");
+					if(!prefabAssets.ContainsKey(prefab.name)) {
+						Debug.LogWarning($"Missing Prefab {prefab.name}");
 						continue;
 					}
+					prefab = prefabAssets[prefab.name];
 					// Replace the child with instance of gathered prefab
 					var instance = EP.Instantiate(prefab).transform;
 					instance.name = child.name;
