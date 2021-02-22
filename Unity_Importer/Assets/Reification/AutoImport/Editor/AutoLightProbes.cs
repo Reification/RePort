@@ -18,10 +18,8 @@ namespace Reification {
 	/// https://docs.unity3d.com/2020.1/Documentation/Manual/class-LightProbeGroup.html
 	/// </remarks>
 	public class AutoLightProbes {
-		const string menuItemName = "Reification/Auto Probes";
+		const string menuItemName = "Reification/Auto Light Probes";
 		const int menuItemPriority = 30;
-
-		public static Vector3 probeSpaces = new Vector3(0.5f, 1f, 0.5f); // Modify as needed
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
@@ -31,7 +29,7 @@ namespace Reification {
 		[MenuItem(menuItemName, priority = menuItemPriority)]
 		private static void Execute() {
 			Undo.IncrementCurrentGroup();
-			Undo.SetCurrentGroupName("Auto LightProbes");
+			Undo.SetCurrentGroupName("Auto Light Probes");
 
 			var selectionList = Selection.gameObjects;
 			foreach(var selection in selectionList) ApplyTo(selection);
@@ -55,20 +53,15 @@ namespace Reification {
 				probeGroupObject.name = gameObject.name + "_Probes";
 				probeGroup = EP.AddComponent<LightProbeGroup>(probeGroupObject);
 				EP.SetParent(probeGroupObject.transform, gameObject.transform);
-				// NOTE: Light probe points are defined in world coordinates,
-				// so probeGroup transform must coincide with world origin.
+				// Light probe positions are derived relative to gameObject
+				// and are evaluated relative to LightProbeGroup
+				// https://docs.unity3d.com/ScriptReference/LightProbeGroup-probePositions.html
+				probeGroupObject.transform.localPosition = Vector3.zero;
+				probeGroupObject.transform.localRotation = Quaternion.identity;
+				probeGroupObject.transform.localScale = Vector3.one;
 			}
+			// TODO: Enable configuration to use other placement strategies
 			probeGroup.probePositions = LightProbeGrid(gameObject, probeSpaces);
-		}
-
-		static Vector3 ProbesOrigin(Bounds bounds) {
-			var origin = Vector3.zero;
-			for(int i = 0; i < 3; ++i) {
-				var count = Mathf.CeilToInt(2f * bounds.extents[i] / probeSpaces[i]);
-				var envelope = count * probeSpaces[i];
-				origin[i] = bounds.center[i] - envelope / 2f;
-			}
-			return origin;
 		}
 
 		// TODO: Move into physics extensions
@@ -100,26 +93,16 @@ namespace Reification {
 			Interior // Inside of surfaces
 		};
 
-		// IDEA: Use volume overlap for probes as well.
-		// NOTE: This could be used to expand the layering on any surface
-		// by making volumes overlap, so a 2-probe layer is always present.
-
-		// IDEA: Probe placement could also be focussed on LoD objects
-		// individually with a much higher density.
-
-		// NOTE: Similarly, small objects could be removed from lightmap
-		// and could receive only probe lighting.
-
 		// Cast to 6 adjacent probes along world coordinates
 		static ProbeState GetProbeState(Vector3 origin, GameObject root = null) {
 			var endingList = new Vector3[] {
-			origin + Vector3.right * probeSpaces[0],
-			origin - Vector3.right * probeSpaces[0],
-			origin + Vector3.up * probeSpaces[1],
-			origin - Vector3.up * probeSpaces[1],
-			origin + Vector3.forward * probeSpaces[2],
-			origin - Vector3.forward * probeSpaces[2],
-		};
+				origin + Vector3.right * probeSpaces[0],
+				origin - Vector3.right * probeSpaces[0],
+				origin + Vector3.up * probeSpaces[1],
+				origin - Vector3.up * probeSpaces[1],
+				origin + Vector3.forward * probeSpaces[2],
+				origin - Vector3.forward * probeSpaces[2],
+			};
 
 			// FIXME: This runs twice on each segment - once for each side's probe
 			// FIXME: If the interior of a mesh is larger than the probe spacing
@@ -142,12 +125,24 @@ namespace Reification {
 			return probeState;
 		}
 
-		// TODO: Probe placement is only to provide illumination to lower LoD objects.
-		// Consequently, if a probe does not provide lighting information for any
-		// lower levels of detail it could be removed. This can be tested with a volume overlap
+		public static Vector3 probeSpaces = new Vector3(0.5f, 1f, 0.5f); // Modify as needed
 
-		// NOTE: Probes can also provide indirect illumination for dynamic objects,
-		// but Enlighten lighting will also handle this when used
+		static Vector3 ProbesOrigin(Bounds bounds) {
+			var origin = Vector3.zero;
+			for(int i = 0; i < 3; ++i) {
+				var count = Mathf.CeilToInt(2f * bounds.extents[i] / probeSpaces[i]);
+				var envelope = count * probeSpaces[i];
+				origin[i] = bounds.center[i] - envelope / 2f;
+			}
+			return origin;
+		}
+
+		// TODO: Configure proxy volumes for objects that exceed probe lighting and exceed probe spacing size
+		// This is important for curved building surfaces that receive varying indirect light.
+
+		// IDEA: In the absence of visible dynamic object, probes only provides illumination to lower LoD objects.
+		// Consequently, if a probe does not provide lighting information for any lower levels of detail it could be removed.
+		// This can be tested with a volume overlap.
 
 		// IDEA: Decimate light probes acording to scale in lightmap.
 		// In particular, terrain will contribute to lightmap, but will have a scale of 0,
@@ -156,6 +151,9 @@ namespace Reification {
 		/// <summary>
 		/// Generate a grid of probe points adjacent to surfaces
 		/// </summary>
+		/// <remarks>
+		/// The light probe grid is derived relative to world coordinates.
+		/// </remarks>
 		/// <param name="gameObject">Object to be enveloped in probes</param>
 		/// <param name="probeSpaces">Spacing of probe grid</param>
 		public static Vector3[] LightProbeGrid(GameObject gameObject, Vector3 probeSpaces) {
@@ -181,7 +179,7 @@ namespace Reification {
 					for(point[2] = worldOrigin[2]; point[2] < worldBounds.max[2] + probeSpaces[2]; point[2] += probeSpaces[2]) {
 						var probeState = GetProbeState(point, gameObject);
 						if(probeState != ProbeState.Surface) continue;
-						probePointList.Add(point);
+						probePointList.Add(gameObject.transform.InverseTransformPoint(point));
 					}
 			return probePointList.ToArray();
 		}

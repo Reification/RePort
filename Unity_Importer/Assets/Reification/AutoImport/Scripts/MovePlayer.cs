@@ -11,23 +11,20 @@ namespace Reification {
 		Camera playerCamera;
 		CharacterController controller;
 
+		/// <summary>
+		/// Player maximum movement rate
+		/// </summary>
 		public float moveRate = 3f; // meters / second
 
-		bool UpPressed() {
-			return Input.GetAxis("Vertical") > 0;
-		}
+		/// <summary>
+		/// Name of input axis controlling forward / backward movement
+		/// </summary>
+		public string forwardAxisName = "Vertical";
 
-		bool DownPressed() {
-			return Input.GetAxis("Vertical") < 0;
-		}
-
-		bool LeftPressed() {
-			return Input.GetAxis("Horizontal") < 0;
-		}
-
-		bool RightPressed() {
-			return Input.GetAxis("Horizontal") > 0;
-		}
+		/// <summary>
+		/// Name of input axis controlling right / left movement
+		/// </summary>
+		public string lateralAxisName = "Horizontal";
 
 		void Start() {
 			playerCamera = GetComponentInChildren<Camera>();
@@ -36,11 +33,8 @@ namespace Reification {
 
 		void Update() {
 			// Get movement for frame
-			var move2 = Vector2.zero;
-			if(UpPressed()) move2 += Vector2.up;
-			if(DownPressed()) move2 += Vector2.down;
-			if(LeftPressed()) move2 += Vector2.left;
-			if(RightPressed()) move2 += Vector2.right;
+			var move2 = new Vector2(Input.GetAxis(lateralAxisName), Input.GetAxis(forwardAxisName));
+			if(move2.magnitude > 1f) move2 /= move2.magnitude;
 
 			// Align movement with camera
 			var move3 = move2.x * playerCamera.transform.right + move2.y * playerCamera.transform.forward;

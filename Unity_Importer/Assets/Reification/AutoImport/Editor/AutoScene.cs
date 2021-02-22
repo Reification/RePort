@@ -52,12 +52,14 @@ namespace Reification {
 		}
 
 		static public string CreateScene(string path, params GameObject[] gameObjects) {
+			var scenePath = path + ".unity";
+
 			// PROBLEM: When using NewSceneMode.Single during import assertion "GetApplication().MayUpdate()" fails
 			// SOLUTION: During import, using Additive loading works.
 			// PROBLEM: InvalidOperationException: Cannot create a new scene additively with an untitled scene unsaved.
 			// NOTE: This can occur when the previously opened scene has ceased to exist, in particular when a project is opened.
 			var scene = EditorSceneManager.GetActiveScene();
-			var addNew = scene.name.Length > 0 && scene.path.Length > 0; // scene.IsValid() will be true even when path and name are empty
+			var addNew = scene.name.Length > 0 && scene.path.Length > 0 && scene.path != scenePath; // scene.IsValid() will be true even when path and name are empty
 			if(addNew) {
 				scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
 			} else {
@@ -72,7 +74,6 @@ namespace Reification {
 
 			// PROBLEM: At end of import the open scene will have been modified, so a pop-up will appear.
 			// SOLUTION: After loading the scene in additive mode, close it.
-			var scenePath = path + ".unity";
 			EditorSceneManager.SaveScene(scene, scenePath);
 			if(addNew) EditorSceneManager.CloseScene(scene, true);
 			return scenePath;
@@ -105,6 +106,7 @@ namespace Reification {
 					}
 				}
 
+				// IDEA: Search folder for prefabs and instantiate all of them in scene
 				CreateSun(sceneBounds);
 				CreatePlayer(sceneBounds);
 				// TODO: Use IConfigurable to configure objects in scene.

@@ -40,15 +40,17 @@ def safe_file_name(name):
     name = name.replace('*', "")
     return name
 
+# Remove unsafe characters from block name
+def safe_block_name(name):
+    name = safe_file_name(name)
+    name = name.replace("=", "-")
+    return name
+
 # Rhino export looks at filename suffix to determine format
 # Unity import looks for suffix to determined format,
 # and at names before suffix to determine provenance.
 def save_suffix():
-    #if version == 6:
-    #    return ".3dm_6.fbx"
-    #if version == 5:
-    #    return ".3dm_5.fbx"
-    return ".fbx"
+    return ".3dm_" + str(version) + ".fbx"
 
 # IDEA: When exporting placeholders
 # exclude materials and textures
@@ -97,6 +99,7 @@ def fbx_options():
     raise Exception("Unsupported Rhino version: " + str(version))
 
 # TODO: Adapt distance options to file units
+# IDEA: Interactive mode could allow modification of defaults
 
 # Parametric Surface Meshing Options
 # https://wiki.mcneel.com/rhino/meshsettings
@@ -172,7 +175,7 @@ def ExportBlock(path, name, detail=0):
     file_name = os.path.join(path, name + save_sufix())
     rs.Command(
         "-BlockManager Export " +\
-        '"' + block_id + '" ' +\
+        '"' + name + '" ' +\
         save_options() +\
         '"' + file_name + '" ' +\
         fbx_options() + "Enter " +\
@@ -249,10 +252,11 @@ def Placeholder(instance, scale):
     )
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
-    name = rs.ObjectName(instance)
-    if name is None:
-        name = ""
-    rs.ObjectName(placeholder, rs.BlockInstanceName(instance) + "=" + name)
+    objectName = rs.ObjectName(instance)
+    if objectName is None:
+        objectName = ""
+    blockName = safe_block_name(rs.BlockInstanceName(instance))
+    rs.ObjectName(placeholder, objectName + "=" + blockName)
     rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
     return placeholder
 
@@ -318,7 +322,7 @@ def ExportSelected(scale, path, name):
             # On import contents of block will be merged,
             # and will then replace placeholders in scene and other blocks
             block = rs.BlockInstanceName(object)
-            block_name = safe_file_name(block)
+            block_name = safe_block_name(block)
             block_path = os.path.join(path, block_name)
             block_done = False
             try:
@@ -391,6 +395,10 @@ def GetExportPath(is_interactive):
 # TODO: Find a way to not register scene changes
 
 def RunCommand(is_interactive):
+    if not (version == 5 or version == 6):
+        print(__commandname__ + ": does not support Rhino version " + str(version) + " -> abort")
+        return
+    
     path_name = GetExportPath(is_interactive)
     if path_name is None:
         print(__commandname__ + ": no export location -> abort")
