@@ -43,7 +43,7 @@ namespace Reification {
 		// IDEA: Use RAII to push & pop states. Also, when running headless never
 		// enter the Undo recording state.
 		// QUESTION: Can a scene be saved from a script if not marked "dirty"? If so,
-		// then when running headles don't even both with that!
+		// then when running headless, marking dirty is unnecessary
 
 		// TEMP: Use this instead of !Application.isBatchMode for performace testing
 		public static bool useEditorUndo {

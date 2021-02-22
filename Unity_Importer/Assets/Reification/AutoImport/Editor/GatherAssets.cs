@@ -238,9 +238,6 @@ namespace Reification {
 
 			public void CopyMeshes(MeshFilter meshFilter) {
 				var mesh = meshFilter.sharedMesh;
-				if(mesh.name.StartsWith("Surface")) {
-					Debug.Log($"Copying mesh {mesh.name}");
-				}
 				reduceMeshName(mesh);
 				if(
 					meshAssets.ContainsKey(mesh.name) &&
