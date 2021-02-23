@@ -141,17 +141,17 @@ namespace Reification {
 				if(material.shader.name != "Standard") return;
 				var shaderTextures = GetStandardMaterialTextures(material);
 				foreach(var shaderTexture in shaderTextures) {
-					var texture = shaderTexture.Value;
-					if(!textureAssets.ContainsKey(texture.name)) {
-						Debug.LogWarning($"Missing Texture {texture.name}");
+					var oldTexture = shaderTexture.Value;
+					if(!textureAssets.ContainsKey(oldTexture.name)) {
+						Debug.LogWarning($"Missing Texture {oldTexture.name} from {texturePath}");
 						continue;
 					}
-					texture = textureAssets[texture.name];
-					if(!material) {
-						Debug.LogWarning($"Created texture {texture.name} could not be loaded -> stop editing assets, then reconstruct TextureGatherer");
+					var newTexture = textureAssets[oldTexture.name];
+					if(!newTexture) {
+						Debug.LogWarning($"Created texture {oldTexture.name} could not be loaded from {texturePath} -> stop editing assets, then reconstruct TextureGatherer");
 						continue;
 					}
-					material.SetTexture(shaderTexture.Key, texture);
+					material.SetTexture(shaderTexture.Key, newTexture);
 				}
 			}
 		}
@@ -187,18 +187,18 @@ namespace Reification {
 			public void SwapMaterials(Renderer renderer) {
 				var sharedMaterials = renderer.sharedMaterials;
 				for(var m = 0; m < sharedMaterials.Length; ++m) {
-					var material = sharedMaterials[m];
-					if(!material) continue;
-					if(!materialAssets.ContainsKey(material.name)) {
-						Debug.LogWarning($"Missing Material {material.name}");
+					var oldMaterial = sharedMaterials[m];
+					if(!oldMaterial) continue;
+					if(!materialAssets.ContainsKey(oldMaterial.name)) {
+						Debug.LogWarning($"Missing Material {oldMaterial.name} on {renderer.Path()} from {materialPath}");
 						continue;
 					}
-					material = materialAssets[material.name];
-					if(!material) {
-						Debug.LogWarning($"Created material {material.name} could not be loaded -> stop editing assets, then reconstruct MaterialGatherer");
+					var newMaterial = materialAssets[oldMaterial.name];
+					if(!newMaterial) {
+						Debug.LogWarning($"Created material {oldMaterial.name} on {renderer.Path()} could not be loaded from {materialPath} -> stop editing assets, then reconstruct MaterialGatherer");
 						continue;
 					}
-					sharedMaterials[m] = material;
+					sharedMaterials[m] = newMaterial;
 				}
 				renderer.sharedMaterials = sharedMaterials;
 			}
@@ -253,23 +253,26 @@ namespace Reification {
 			}
 
 			public void SwapMeshes(MeshFilter meshFilter) {
-				var mesh = meshFilter.sharedMesh;
-				reduceMeshName(mesh);
+				var oldMesh = meshFilter.sharedMesh;
+				reduceMeshName(oldMesh);
 				if(!(
-					meshAssets.ContainsKey(mesh.name) &&
-					meshAssets[mesh.name].ContainsKey(mesh.vertexCount)
+					meshAssets.ContainsKey(oldMesh.name) &&
+					meshAssets[oldMesh.name].ContainsKey(oldMesh.vertexCount)
 				)) {
-					Debug.LogWarning($"Missing Mesh {mesh.name} with vertexCount = {mesh.vertexCount}");
+					Debug.LogWarning($"Missing Mesh {oldMesh.name} with vertexCount = {oldMesh.vertexCount} on {meshFilter.Path()} from {meshPath}");
 					return;
 				}
-				mesh = meshAssets[mesh.name][mesh.vertexCount];
-				if(!mesh) {
-					Debug.LogWarning($"Created mesh {mesh.name} could not be loaded -> stop editing assets, then reconstruct MeshGatherer");
+				var newMesh = meshAssets[oldMesh.name][oldMesh.vertexCount];
+				if(!oldMesh) {
+					Debug.LogWarning($"Created mesh {oldMesh.name} with vertexCount = {oldMesh.vertexCount} on {meshFilter.Path()} could not be loaded from {meshPath} -> stop editing assets, then reconstruct MeshGatherer");
 					return;
 				}
-				meshFilter.sharedMesh = mesh;
+				meshFilter.sharedMesh = newMesh;
 			}
 		}
+
+		// FIXME: Prefab gathering in case custom prefabs are used.
+		// PROBLEM: Custom prefabs with scripts (e.g. SpeedTree) might not work.
 
 		public class PrefabGatherer {
 			const string prefabFolder = "Prefabs";
@@ -309,7 +312,7 @@ namespace Reification {
 					if(PrefabUtility.GetPrefabAssetType(child.gameObject) == PrefabAssetType.NotAPrefab) continue;
 					var prefab = PrefabUtility.GetCorrespondingObjectFromSource<GameObject>(child.gameObject);
 					if(!prefabAssets.ContainsKey(prefab.name)) {
-						Debug.LogWarning($"Missing Prefab {prefab.name}");
+						Debug.LogWarning($"Missing Prefab {prefab.name} from {prefabFolder}");
 						continue;
 					}
 					prefab = prefabAssets[prefab.name];
