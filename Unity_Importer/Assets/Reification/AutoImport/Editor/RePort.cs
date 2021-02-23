@@ -504,9 +504,6 @@ namespace Reification {
 			}
 			if(!success) return;
 
-			// TEMP
-			return;
-
 			CombinePartial(partialModels, completeModels);
 			AssembleComplete(completeModels, assembledModels);
 			var configured = ConfigureAssembled(assembledModels);
@@ -576,18 +573,21 @@ namespace Reification {
 			try {
 				AssetDatabase.StartAssetEditing();
 				foreach(var model in completeModels) {
-					var prefabPath = AssetDatabase.GetAssetPath(model);
-					var searchPath = prefabPath.Substring(0, prefabPath.Length - ".prefab".Length);
+					var searchPath = AssetDatabase.GetAssetPath(model);
+					searchPath = searchPath.Substring(0, searchPath.Length - ".prefab".Length);
 
+					// IMPORTANT: Since prefabs are not copied after replacement, this ensures that the prefabs can be updated
 					// Assembled models will contain only prefabs in their associated folder
 					// Constituent models may contain other constituent models, so search should begin adjacent
-					var isAssembledModel = !searchPath.Substring(importPath.Length).Contains("/");
-					if(!isAssembledModel) searchPath = searchPath.Substring(0, searchPath.LastIndexOf('/'));
+					var prefabPath = searchPath;
+					var isAssembledModel = !prefabPath.Substring(importPath.Length).Contains("/");
+					if(!isAssembledModel) prefabPath = prefabPath.Substring(0, prefabPath.LastIndexOf('/'));
 
 					// IMPORTANT: Prefab replacement must happen after merged assets are imported, but before assets are swapped
-					// IMPORTANT: Since prefabs are not copied after replacement, this ensures that the prefabs can be updated
+					// in order to enable prefab gathering.
 					ReplacePrefabs.ApplyTo(model, searchPath);
 
+					// FIXME: This search path should NOT be adjacent!
 					// Swap assets for copies created when combining partial models
 					// NOTE: Modifications will not alter original assets, since copies are now being used
 					var gatherer = new GatherAssets.AssetGatherer(searchPath);
