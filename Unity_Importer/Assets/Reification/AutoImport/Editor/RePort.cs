@@ -164,8 +164,8 @@ namespace Reification {
 		static HashSet<string> configuredImport = new HashSet<string>();
 
 		void OnPreprocessModel() {
+			// Only apply RePort importing process to models in importPath
 			if(!assetPath.StartsWith(importPath)) return;
-
 			Debug.Log($"RePort.OnPreprocessModel({assetPath})");
 
 			// QUESTION: Are previous unwrap results used when reimporting?
@@ -322,13 +322,17 @@ namespace Reification {
 
 			material.name = SafeAssetName(material.name);
 
+			// TODO: Avoid the pop-up requesting to fix normalmap texture types (ideally by identifying as normalmap)
+			// https://docs.unity3d.com/ScriptReference/AssetPostprocessor.OnPreprocessTexture.html
+			// This will require reimporting assets with settings configured for each asset.
+
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
 			if(importerDict.ContainsKey(source)) importerDict[source].ImportMaterial(material, element);
 		}
 
 		void OnPostprocessModel(GameObject model) {
 			if(!configuredImport.Contains(assetPath)) return;
-			Debug.Log($"RePort.OnPostprocessModel({assetPath})");
+			//Debug.Log($"RePort.OnPostprocessModel({assetPath})");
 
 			foreach(var child in model.Children(true)) child.name = SafeAssetName(child.name);
 
@@ -380,7 +384,7 @@ namespace Reification {
 			// Ensure that ProcessTexturesImport is called only once per import batch
 			// IMPORTANT: Unregistering must occur before any possible import exception
 			// Otherwise the editor will deadlock while repeatedly attempting to import.
-			EditorApplication.update -= ProcessConfiguredImport;
+			EditorApplication.update -= ProcessExtractionImport;
 			// PROBLEM: Unsubscribing from EditorApplication.update is not immediate - multiple callbacks may be received
 			// SOLUTION: Abort immediately if importAssets is empty
 			if(extractionImport.Count == 0) return;
@@ -388,23 +392,30 @@ namespace Reification {
 			// IMPORTANT: Textures must be extracted and remapped before materials are extracted
 			// This will require reimporting the model, with texture remapping applied
 			try {
-				foreach(var assetPath in extractionImport) ExtractTextures(assetPath);
+				foreach(var modelPath in extractionImport) {
+					ExtractTextures(modelPath);
+					// IMPORTANT: Always reimport model in order to update configuration.
+					AssetDatabase.ImportAsset(modelPath, ImportAssetOptions.ForceSynchronousImport); // Delegates to updating methods immediately
+				}
 			} finally {
 				// IMPORTANT: Unblock future imports even if this import failed
 				extractionImport.Clear();
 			}
 		}
 
+		// TODO: ExtractTextures should support list parameters for batched importing
+
 		/// <summary>
 		/// Extracts and remaps textures for use by materials
 		/// </summary>
+		/// <returns>True if reimport is requied</returns>
 		/// <remarks>
 		/// IMPORTANT: In order for extracted textures to be remapped to materials
 		/// this must be called when AssetDatabase.StartAssetEditing() does not pertain
 		/// so that textures can be synchronously imported for remapping.
 		/// 
-		/// WARNING: In order to update model materials the model will be remiported,
-		/// so if import triggers this call recursion must be prevented.
+		/// WARNING: In order to update model materials the model must be remiported:
+		///  AssetDatabase.ImportAsset(modelPath)
 		/// 
 		/// For the implementation of the "Extract Textures" button 
 		/// in the "Materials" tab of the "Import Settings" Inspector panel, see:
@@ -412,15 +423,16 @@ namespace Reification {
 		/// Modules/AssetPipelineEditor/ImportSettings/ModelImporterMaterialEditor.cs
 		/// private void ExtractTexturesGUI()
 		/// </remarks>
-		static public void ExtractTextures(string modelPath) {
+		static public bool ExtractTextures(string modelPath) {
 			var modelImporter = AssetImporter.GetAtPath(modelPath) as ModelImporter;
-			if(modelImporter == null) return;
+			if(modelImporter == null) return false;
 
 			// Extract textures
 			var texturesPath = modelPath.Substring(0, modelPath.LastIndexOf('.')) + "/Textures";
+			var success = false; // success, not extraction count
 			try {
 				AssetDatabase.StartAssetEditing();
-				modelImporter.ExtractTextures(texturesPath);
+				success = modelImporter.ExtractTextures(texturesPath);
 			} finally {
 				AssetDatabase.StopAssetEditing();
 				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
@@ -429,7 +441,7 @@ namespace Reification {
 
 			// If no textures were imported remove folder & skip the reimport
 			// NOTE: ExtractTextures will only create the texturesPath if there are textures to be extracted
-			if(EP.CreatePersistentPath(texturesPath.Substring("Assets/".Length), false) > 0) return;
+			if(!success || EP.CreatePersistentPath(texturesPath.Substring("Assets/".Length), false) > 0) return false;
 
 			// Remap textures and reimport model
 			// NOTE: Remapping will fail while StartAssetEditing() pertains (during model import)
@@ -442,12 +454,7 @@ namespace Reification {
 				var identifier = new AssetImporter.SourceAssetIdentifier(texture);
 				modelImporter.AddRemap(identifier, texture);
 			}
-			// IMPORTANT: Immediately reimport model to update materials with texture remapping.
-			AssetDatabase.ImportAsset(modelPath, ImportAssetOptions.ForceSynchronousImport);
-
-			// TODO: Avoid the pop-up requesting to fix normalmap texture types (ideally by identifying as normalmap)
-			// https://docs.unity3d.com/ScriptReference/AssetPostprocessor.OnPreprocessTexture.html
-			// This will require reimporting assets with settings configured for each asset.
+			return true;
 		}
 
 		static void ProcessConfiguredImport() {
