@@ -166,7 +166,7 @@ namespace Reification {
 		void OnPreprocessModel() {
 			// Only apply RePort importing process to models in importPath
 			if(!assetPath.StartsWith(importPath)) return;
-			Debug.Log($"RePort.OnPreprocessModel({assetPath})");
+			//Debug.Log($"RePort.OnPreprocessModel({assetPath})");
 
 			// QUESTION: Are previous unwrap results used when reimporting?
 			// If unwrap is cached then don't change import settings.
@@ -478,7 +478,7 @@ namespace Reification {
 			var success = true;
 			try {
 				foreach(var assetPath in configuredImport) {
-					Debug.Log($"RePort.ProcessImportedModels(): modelPath = {assetPath}");
+					//Debug.Log($"RePort.ProcessImportedModels(): modelPath = {assetPath}");
 
 					// TODO: Skip this step for places model element
 					// Extract all assets from each imported model
