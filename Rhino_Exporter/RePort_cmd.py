@@ -6,9 +6,13 @@ import scriptcontext as sc
 import os
 import shutil
 
+import __plugin__
+
 __commandname__ = "RePort"
 
-version = RhinoApp.Version.Major
+Rhino_version = RhinoApp.Version.Major
+
+RePort_version = __plugin__.version 
 
 # TODO: In interactive mode, limit selection to what is visible
 # This would make it possible to break a model into separately
@@ -50,7 +54,7 @@ def safe_block_name(name):
 # Unity import looks for suffix to determined format,
 # and at names before suffix to determine provenance.
 def save_suffix():
-    return ".3dm_" + str(version) + ".fbx"
+    return ".3dm_" + str(Rhino_version) + ".fbx"
 
 # IDEA: When exporting placeholders
 # exclude materials and textures
@@ -61,8 +65,9 @@ def save_suffix():
 # NOTE: Unrecognized commands are interpreted as filename!
 # When running Rhino5 entering Version=6 saves "Version=6.3dm"
 def save_options():
+    # https://docs.mcneel.com/rhino/7/help/en-us/commands/save.htm
     # https://docs.mcneel.com/rhino/6/help/en-us/commands/save.htm
-    if version == 6:
+    if Rhino_version == 7 or Rhino_version == 6:
         return \
             "Version=6 "\
             "SaveTextures=Yes "\
@@ -71,38 +76,49 @@ def save_options():
             "SaveSmall=Yes "\
             "SaveNotes=No "
     # https://docs.mcneel.com/rhino/5/help/en-us/commands/save.htm
-    if version == 5:
+    if Rhino_version == 5:
         return \
             "Version=5 "\
             "SaveTextures=Yes "\
             "GeometryOnly=No "\
             "SavePluginData=No "\
             "SaveSmall=Yes "
-    raise Exception("Unsupported Rhino version: " + str(version))
+    raise Exception("Unsupported Rhino Rhino_version: " + str(Rhino_version))
 
 # FBX export options targeting Unity's import process
 # NOTE: Enter exits fbx options
 def fbx_options():
+    # https://docs.mcneel.com/rhino/7/help/en-us/fileio/motionbuilder_fbx_import_export.htm
+    if Rhino_version == 7:
+        return \
+            "ExportFileAs=Version7Binary "\
+            "ExportNurbsObjectsAs=Mesh "\
+            "ExportMaterialsAs=Lambert "\
+            "YUp=No "\
+            "ExportVertexNormals=Yes "\
+            "ExportLights=Yes "\
+            "ExportViews=No "
     # https://docs.mcneel.com/rhino/6/help/en-us/fileio/motionbuilder_fbx_import_export.htm
-    if version == 6:
+    if Rhino_version == 6:
         return \
             "ExportFileAs=Version7Binary "\
             "ExportNurbsObjectsAs=Mesh "\
             "ExportMaterialsAs=Lambert "\
             "YUp=No "
     # https://docs.mcneel.com/rhino/5/help/en-us/fileio/motionbuilder_fbx_import_export.htm
-    if version == 5:
+    if Rhino_version == 5:
         return \
             "ExportFileAs=Version7Binary "\
             "ExportNurbsObjectsAs=Mesh "\
             "ExportMaterialsAs=Lambert "
-    raise Exception("Unsupported Rhino version: " + str(version))
+    raise Exception("Unsupported Rhino Rhino_version: " + str(Rhino_version))
 
 # TODO: Adapt distance options to file units
 # IDEA: Interactive mode could allow modification of defaults
 
 # Parametric Surface Meshing Options
 # https://wiki.mcneel.com/rhino/meshsettings
+# https://docs.mcneel.com/rhino/7/help/en-us/popup_moreinformation/polygon_mesh_detailed_options.htm
 def MeshingOptions(detail):
     meshing_options = " PolygonDensity=0 "
     if detail == 0:
@@ -117,6 +133,7 @@ def MeshingOptions(detail):
             "SimplePlane=Yes "\
             "Refine=Yes "\
             "PackTextures=No "
+    #FIXME: Rhino7 adds SubdivisionLevel=4 and SubdivisionContext=Absolute
     if detail == 0:
         meshing_options += "AdvancedOptions "\
             "Angle=15 "\
@@ -395,13 +412,17 @@ def GetExportPath(is_interactive):
 # TODO: Find a way to not register scene changes
 
 def RunCommand(is_interactive):
-    if not (version == 5 or version == 6):
-        print(__commandname__ + ": does not support Rhino version " + str(version) + " -> abort")
+    command_preamble = __commandname__ + " v" + RePort_version
+    if is_interactive:
+        print(command_preamble)
+    
+    if not (Rhino_version == 7 or Rhino_version == 6 or Rhino_version == 5):
+        print(command_preamble + ": does not support Rhino Rhino_version " + str(Rhino_version) + " -> abort")
         return
     
     path_name = GetExportPath(is_interactive)
     if path_name is None:
-        print(__commandname__ + ": no export location -> abort")
+        print(command_preamble + ": no export location -> abort")
         return
     
     scale = ModelScale()
@@ -412,7 +433,7 @@ def RunCommand(is_interactive):
     finally:
         rs.UnselectAllObjects()
         rs.EnableRedraw(True)
-    print(__commandname__ + ": success")
+    print(command_preamble + ": success")
 
 # GOAL: No changes to scene (no save request)
 # GOAL: Launch Rhino in batch mode (headless) 

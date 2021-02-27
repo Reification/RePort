@@ -141,14 +141,17 @@ namespace Reification {
 				if(material.shader.name != "Standard") return;
 				var shaderTextures = GetStandardMaterialTextures(material);
 				foreach(var shaderTexture in shaderTextures) {
-					var texture = shaderTexture.Value;
-					if(!textureAssets.ContainsKey(texture.name)) continue;
-					texture = textureAssets[texture.name];
-					if(!material) {
-						Debug.LogWarning($"Created texture {texture.name} could not be loaded -> stop editing assets, then reconstruct TextureGatherer");
+					var oldTexture = shaderTexture.Value;
+					if(!textureAssets.ContainsKey(oldTexture.name)) {
+						Debug.LogWarning($"Missing Texture {oldTexture.name} from {texturePath}");
 						continue;
 					}
-					material.SetTexture(shaderTexture.Key, texture);
+					var newTexture = textureAssets[oldTexture.name];
+					if(!newTexture) {
+						Debug.LogWarning($"Created texture {oldTexture.name} could not be loaded from {texturePath} -> stop editing assets, then reconstruct TextureGatherer");
+						continue;
+					}
+					material.SetTexture(shaderTexture.Key, newTexture);
 				}
 			}
 		}
@@ -184,15 +187,18 @@ namespace Reification {
 			public void SwapMaterials(Renderer renderer) {
 				var sharedMaterials = renderer.sharedMaterials;
 				for(var m = 0; m < sharedMaterials.Length; ++m) {
-					var material = sharedMaterials[m];
-					if(!material) continue;
-					if(!materialAssets.ContainsKey(material.name)) continue;
-					material = materialAssets[material.name];
-					if(!material) {
-						Debug.LogWarning($"Created material {material.name} could not be loaded -> stop editing assets, then reconstruct MaterialGatherer");
+					var oldMaterial = sharedMaterials[m];
+					if(!oldMaterial) continue;
+					if(!materialAssets.ContainsKey(oldMaterial.name)) {
+						Debug.LogWarning($"Missing Material {oldMaterial.name} on {renderer.Path()} from {materialPath}");
 						continue;
 					}
-					sharedMaterials[m] = material;
+					var newMaterial = materialAssets[oldMaterial.name];
+					if(!newMaterial) {
+						Debug.LogWarning($"Created material {oldMaterial.name} on {renderer.Path()} could not be loaded from {materialPath} -> stop editing assets, then reconstruct MaterialGatherer");
+						continue;
+					}
+					sharedMaterials[m] = newMaterial;
 				}
 				renderer.sharedMaterials = sharedMaterials;
 			}
@@ -247,20 +253,26 @@ namespace Reification {
 			}
 
 			public void SwapMeshes(MeshFilter meshFilter) {
-				var mesh = meshFilter.sharedMesh;
-				reduceMeshName(mesh);
-				if(
-					!meshAssets.ContainsKey(mesh.name) ||
-					!meshAssets[mesh.name].ContainsKey(mesh.vertexCount)
-				) return;
-				mesh = meshAssets[mesh.name][mesh.vertexCount];
-				if(!mesh) {
-					Debug.LogWarning($"Created mesh {mesh.name} could not be loaded -> stop editing assets, then reconstruct MeshGatherer");
+				var oldMesh = meshFilter.sharedMesh;
+				reduceMeshName(oldMesh);
+				if(!(
+					meshAssets.ContainsKey(oldMesh.name) &&
+					meshAssets[oldMesh.name].ContainsKey(oldMesh.vertexCount)
+				)) {
+					Debug.LogWarning($"Missing Mesh {oldMesh.name} with vertexCount = {oldMesh.vertexCount} on {meshFilter.Path()} from {meshPath}");
 					return;
 				}
-				meshFilter.sharedMesh = mesh;
+				var newMesh = meshAssets[oldMesh.name][oldMesh.vertexCount];
+				if(!oldMesh) {
+					Debug.LogWarning($"Created mesh {oldMesh.name} with vertexCount = {oldMesh.vertexCount} on {meshFilter.Path()} could not be loaded from {meshPath} -> stop editing assets, then reconstruct MeshGatherer");
+					return;
+				}
+				meshFilter.sharedMesh = newMesh;
 			}
 		}
+
+		// FIXME: Prefab gathering in case custom prefabs are used.
+		// PROBLEM: Custom prefabs with scripts (e.g. SpeedTree) might not work.
 
 		public class PrefabGatherer {
 			const string prefabFolder = "Prefabs";
@@ -273,6 +285,10 @@ namespace Reification {
 				var prefabGUIDs = AssetDatabase.FindAssets("t:GameObject", new[] { prefabPath });
 				foreach(var guid in prefabGUIDs) {
 					var asset = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid));
+					if(!asset) {
+						Debug.LogWarning($"Created prefab {prefabPath} could not be loaded -> stop editing assets, then reconstruct PrefabGatherer");
+						continue;
+					}
 					prefabAssets.Add(asset.name, asset);
 				}
 			}
@@ -295,12 +311,11 @@ namespace Reification {
 				foreach(var child in children) {
 					if(PrefabUtility.GetPrefabAssetType(child.gameObject) == PrefabAssetType.NotAPrefab) continue;
 					var prefab = PrefabUtility.GetCorrespondingObjectFromSource<GameObject>(child.gameObject);
-					if(!prefabAssets.ContainsKey(prefab.name)) continue;
-					prefab = prefabAssets[prefab.name];
-					if(!prefab) {
-						Debug.LogWarning($"Created prefab {prefab.name} could not be loaded -> stop editing assets, then reconstruct PrefabGatherer");
+					if(!prefabAssets.ContainsKey(prefab.name)) {
+						Debug.LogWarning($"Missing Prefab {prefab.name} from {prefabFolder}");
 						continue;
 					}
+					prefab = prefabAssets[prefab.name];
 					// Replace the child with instance of gathered prefab
 					var instance = EP.Instantiate(prefab).transform;
 					instance.name = child.name;
