@@ -14,21 +14,6 @@ Rhino_version = RhinoApp.Version.Major
 
 RePort_version = __plugin__.version 
 
-# TODO: In interactive mode, limit selection to what is visible
-# This would make it possible to break a model into separately
-# imported components.
-
-# IDEA: Running in interactive mode has an OPTION to select folder
-# otherwise a folder will be created adjacent to doc, with same name.
-
-# TODO: Not all blocks are used... restrict to ONLY export
-# the models that are in use.
-
-def ShowStep(step_name):
-    rs.EnableRedraw(True)
-    input = rs.GetString("Showing step: " + step_name + " (Press Enter to continue)")
-    rs.EnableRedraw(False)
-
 # Remove unsafe characters from file name
 # https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
 # https://stackoverflow.com/questions/62771/how-do-i-check-if-a-given-string-is-a-legal-valid-file-name-under-windows
@@ -205,7 +190,7 @@ def ExportBlock(path, name, detail=0):
 # https://developer.rhino3d.com/api/rhinoscript/document_methods/unitcustomunitsystem.htm
 
 # Multiplier to convert model scale to meters
-# FBX import will correctly scale models, but 
+# FBX export will correctly scale models and blocks.
 # https://developer.rhino3d.com/api/rhinoscript/document_methods/unitsystem.htm
 def ModelScale():
     meter = 1.0  # Unity units
@@ -302,10 +287,18 @@ single_export = 32 + 256  # Single export at fixed detail
 detail_export = 8 + 16 + 1073741824  # Multiple level of deltail export
 switch_export = 4096  # Block instances are switched with placeholders
 
+# Pause exporting to show additions and selection
+def ShowStep(step_name):
+    rs.EnableRedraw(True)
+    input = rs.GetString("Showing step: " + step_name + " (Press Enter to continue)")
+    rs.EnableRedraw(False)
+
 # Export currently selected objects
 # This enables recursive exporting of exploded block instances
 def ExportSelected(scale, path, name):
-    selected = rs.SelectedObjects()
+    #ShowStep("Scene or block export")
+    # Include lights, exclude grips
+    selected = rs.SelectedObjects(True, False)
     rs.UnselectAllObjects()
     export_exists = False
     
@@ -313,7 +306,8 @@ def ExportSelected(scale, path, name):
     for object in selected:
         if rs.ObjectType(object) & single_export:
             rs.SelectObject(object)
-    if len(rs.SelectedObjects()) > 0:
+    # Include lights, exclude grips
+    if len(rs.SelectedObjects(True, False)) > 0:
         #ShowStep("Mesh & light objects export")
         ExportModel(path, name + ".meshes")
         export_exists = True
@@ -323,7 +317,8 @@ def ExportSelected(scale, path, name):
     for object in selected:
         if rs.ObjectType(object) & detail_export:
             rs.SelectObject(object)
-    if len(rs.SelectedObjects()) > 0:
+    # Exclude both lights and grips
+    if len(rs.SelectedObjects(False, False)) > 0:
         #ShowStep("parametric objects export")
         ExportModel(path, name + ".detail2", 2)
         ExportModel(path, name + ".detail1", 1)
@@ -407,6 +402,9 @@ def GetExportPath(is_interactive):
     else:
         shutil.rmtree(path, True)
         os.mkdir(path)
+        # BUG: If directory already exists os.mkdir may raise error.
+        # NOTE: Directory deletion succeedes, and subsequent run
+        # will not raise an error.
     return path, name
 
 # TODO: Find a way to not register scene changes
