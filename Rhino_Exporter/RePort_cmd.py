@@ -29,8 +29,8 @@ def safe_file_name(name):
     name = name.replace('*', "")
     return name
 
-# Remove unsafe characters from block name
-def safe_block_name(name):
+# Remove unsafe characters from location name
+def safe_location_name(name):
     name = safe_file_name(name)
     name = name.replace("=", "-")
     return name
@@ -73,30 +73,22 @@ def save_options():
 # FBX export options targeting Unity's import process
 # NOTE: Enter exits fbx options
 def fbx_options():
+    # https://docs.mcneel.com/rhino/5/help/en-us/fileio/motionbuilder_fbx_import_export.htm
+    options = \
+        "ExportFileAs=Version7Binary "\
+        "ExportNurbsObjectsAs=Mesh "\
+        "ExportMaterialsAs=Lambert "
+    # https://docs.mcneel.com/rhino/6/help/en-us/fileio/motionbuilder_fbx_import_export.htm
+    if Rhino_version >= 6:
+        options += \
+            "YUp=No "
     # https://docs.mcneel.com/rhino/7/help/en-us/fileio/motionbuilder_fbx_import_export.htm
-    if Rhino_version == 7:
-        return \
-            "ExportFileAs=Version7Binary "\
-            "ExportNurbsObjectsAs=Mesh "\
-            "ExportMaterialsAs=Lambert "\
-            "YUp=No "\
+    if Rhino_version >= 7:
+        options += \
             "ExportVertexNormals=Yes "\
             "ExportLights=Yes "\
             "ExportViews=No "
-    # https://docs.mcneel.com/rhino/6/help/en-us/fileio/motionbuilder_fbx_import_export.htm
-    if Rhino_version == 6:
-        return \
-            "ExportFileAs=Version7Binary "\
-            "ExportNurbsObjectsAs=Mesh "\
-            "ExportMaterialsAs=Lambert "\
-            "YUp=No "
-    # https://docs.mcneel.com/rhino/5/help/en-us/fileio/motionbuilder_fbx_import_export.htm
-    if Rhino_version == 5:
-        return \
-            "ExportFileAs=Version7Binary "\
-            "ExportNurbsObjectsAs=Mesh "\
-            "ExportMaterialsAs=Lambert "
-    raise Exception("Unsupported Rhino Rhino_version: " + str(Rhino_version))
+    return options
 
 # TODO: Adapt distance options to file units
 # IDEA: Interactive mode could allow modification of defaults
@@ -104,23 +96,22 @@ def fbx_options():
 # Parametric Surface Meshing Options
 # https://wiki.mcneel.com/rhino/meshsettings
 # https://docs.mcneel.com/rhino/7/help/en-us/popup_moreinformation/polygon_mesh_detailed_options.htm
-def MeshingOptions(detail):
-    meshing_options = " PolygonDensity=0 "
+def meshing_options(detail):
+    options = " PolygonDensity=0 "
     if detail == 0:
-        meshing_options += "DetailedOptions "\
+        options += "DetailedOptions "\
             "JaggedSeams=No "\
             "SimplePlane=Yes "\
             "Refine=Yes "\
             "PackTextures=No "
     else:
-        meshing_options += "DetailedOptions "\
+        options += "DetailedOptions "\
             "JaggedSeams=Yes "\
             "SimplePlane=Yes "\
             "Refine=Yes "\
             "PackTextures=No "
-    #FIXME: Rhino7 adds SubdivisionLevel=4 and SubdivisionContext=Absolute
     if detail == 0:
-        meshing_options += "AdvancedOptions "\
+        options += "AdvancedOptions "\
             "Angle=15 "\
             "AspectRatio=0 "\
             "Distance=0.01 "\
@@ -128,8 +119,13 @@ def MeshingOptions(detail):
             "Grid=0 "\
             "MaxEdgeLength=0 "\
             "MinEdgeLength=0.001 "
+        # SubD options: https://discourse.mcneel.com/t/exporting-subd-objects-to-fbx/119364/4
+        if Rhino_version >= 7:
+            options += \
+                "SubdivisionLevel=5 "\
+                "SubdivisionContext=Absolute "
     if detail == 1:
-        meshing_options += "AdvancedOptions "\
+        options += "AdvancedOptions "\
             "Angle=30 "\
             "AspectRatio=0 "\
             "Distance=0.1 "\
@@ -137,8 +133,13 @@ def MeshingOptions(detail):
             "Grid=0 "\
             "MaxEdgeLength=0 "\
             "MinEdgeLength=0.01 "
+        # SubD options: https://discourse.mcneel.com/t/exporting-subd-objects-to-fbx/119364/4
+        if Rhino_version >= 7:
+            options += \
+                "SubdivisionLevel=3 "\
+                "SubdivisionContext=Adaptive "
     if detail == 2:
-        meshing_options += "AdvancedOptions "\
+        options += "AdvancedOptions "\
             "Angle=45 "\
             "AspectRatio=0 "\
             "Distance=1.0 "\
@@ -146,9 +147,14 @@ def MeshingOptions(detail):
             "Grid=0 "\
             "MaxEdgeLength=0 "\
             "MinEdgeLength=0.1 "
-    return meshing_options
+        # SubD options: https://discourse.mcneel.com/t/exporting-subd-objects-to-fbx/119364/4
+        if Rhino_version >= 7:
+            options += \
+                "SubdivisionLevel=1 "\
+                "SubdivisionContext=Adaptive "
+    return options
 
-# NOTE: Detail level 2 is used for collisions,
+# NOTE: Least resolved detail level is used for collisions,
 # so maximum distance cannot diverge too significantly.
 # IDEA: Physics detail level should be based on object scale.
 
@@ -157,16 +163,18 @@ def MeshingOptions(detail):
 # Import could subdivide & subsample.
 # Lightmap should be contributing only.
 
+# PROBLEM: Lights-only export does not work!
+
 # NOTE: file_name followed by space will exit save options
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
 def ExportModel(path, name, detail=0):
     file_name = os.path.join(path, name + save_suffix())
-    rs.Command(
+    return rs.Command(
         "-Export " +\
         save_options() +\
         '"' + file_name + '" ' +\
         fbx_options() + "Enter " +\
-        MeshingOptions(detail) + "Enter " +\
+        meshing_options(detail) + "Enter " +\
         "Enter", 
         True
     )
@@ -175,18 +183,18 @@ def ExportModel(path, name, detail=0):
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
 def ExportBlock(path, name, detail=0):
     file_name = os.path.join(path, name + save_sufix())
-    rs.Command(
+    return rs.Command(
         "-BlockManager Export " +\
         '"' + name + '" ' +\
         save_options() +\
         '"' + file_name + '" ' +\
         fbx_options() + "Enter " +\
-        MeshingOptions(detail) + "Enter " +\
+        meshing_options(detail) + "Enter " +\
         "Enter Enter",  # NOTE: Second enter exits BlockManager
         True
     )
 
-# FIXME: Find Documentation for custom units python interface
+# TODO: Find Documentation for custom units python interface
 # https://developer.rhino3d.com/api/rhinoscript/document_methods/unitcustomunitsystem.htm
 
 # Multiplier to convert model scale to meters
@@ -230,8 +238,7 @@ def ModelScale():
     
 # Create a placeholder tetrahedron that encodes the block instance transform
 # Units will be in meters to be consistent with import
-# https://developer.rhino3d.com/api/rhinoscript/document_methods/unitsystem.htm
-def Placeholder(instance, scale):
+def BlockLocation(instance, scale):
     x = rs.BlockInstanceXform(instance)
     p0 = [x.M00, x.M10, x.M20]  # X Basis direction
     p1 = [x.M01, x.M11, x.M21]  # Y Basis direction
@@ -254,37 +261,48 @@ def Placeholder(instance, scale):
     )
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
+    # in the case that block instances names are not unique
     objectName = rs.ObjectName(instance)
     if objectName is None:
         objectName = ""
-    blockName = safe_block_name(rs.BlockInstanceName(instance))
+    blockName = safe_location_name(rs.BlockInstanceName(instance))
     rs.ObjectName(placeholder, objectName + "=" + blockName)
     rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
     return placeholder
 
-# https://developer.rhino3d.com/api/rhinoscript/selection_methods/objectsbytype.htm
-#         Value        Description
-#       - 0           All objects
-#       X 1           Point
-#       X 2           Point cloud
-#       X 4           Curve
-#       V 8           Surface or single-face brep -> Detail
-#       V 16          Polysurface or multiple-face -> Detail
-#       V 32          Mesh -> Single
-#       V 256         Light -> Single
-#       X 512         Annotation
-#       V 4096        Instance or block reference -> Switch
-#       X 8192        Text dot object
-#       X 16384       Grip object (parametric control point)
-#       X 32768       Detail (view placement on page)
-#       X 65536       Hatch (surface coordinates)
-#       X 131072      Morph control
-#       X 134217728   Cage (deformation box)
-#       X 268435456   Phantom (???)
-#       X 536870912   Clipping plane (camera clipping plane)
-#       V 1073741824  Extrusion (solid extrusion) -> Detail
+# https://developer.rhino3d.com/api/RhinoCommon/html/T_Rhino_DocObjects_ObjectType.htm
+#    - None                  0             Nothing.
+#    X Point                 1             A point.
+#    X PointSet              2             A point set or cloud.
+#    X Curve                 4             A curve.
+#    V Surface               8             A surface.
+#    V Brep                  16            A brep.
+#    V Mesh                  32            A mesh.
+#    V Light                 256           A rendering light.
+#    X Annotation            512           An annotation.
+#    X InstanceDefinition    2048          A block definition.
+#    V InstanceReference     4096          A block reference.
+#    X TextDot               8192          A text dot.
+#    X Grip                  16384         Selection filter value - not a real object type.
+#    X Detail                32768         A detail.
+#    X Hatch                 65536         A hatch.
+#    X MorphControl          131072        A morph control.
+#    V SubD                  262144        A SubD object.
+#    X BrepLoop              524288        A brep loop.
+#    X BrepVertex            1048576       a brep vertex.
+#    X PolysrfFilter         2097152       Selection filter value - not a real object type.
+#    X EdgeFilter            4194304       Selection filter value - not a real object type.
+#    X PolyedgeFilter        8388608       Selection filter value - not a real object type.
+#    X MeshVertex            16777216      A mesh vertex.
+#    X MeshEdge              33554432      A mesh edge.
+#    X MeshFace              67108864      A mesh face.
+#    X Cage                  134217728     A cage.
+#    X Phantom               268435456     A phantom object. https://discourse.mcneel.com/t/what-is-the-phantom-object-type/119363/7
+#    X ClipPlane             536870912     A clipping plane.
+#    V Extrusion             1073741824    An extrusion.
+#    - AnyObject             4294967295    All bits set. 
 single_export = 32 + 256  # Single export at fixed detail
-detail_export = 8 + 16 + 1073741824  # Multiple level of deltail export
+detail_export = 8 + 16 + 262144 + 1073741824  # Multiple level of detail export
 switch_export = 4096  # Block instances are switched with placeholders
 
 # Pause exporting to show additions and selection
@@ -293,8 +311,22 @@ def ShowStep(step_name):
     input = rs.GetString("Showing step: " + step_name + " (Press Enter to continue)")
     rs.EnableRedraw(False)
 
+# FIXME: Update the export interface
+# (1) Meshes export as meshes without suffix
+# (2) Details are also exported as meshes# with suffix
+# (3) Lights are exported with added placeholders
+# - Light type is encoded in name
+# - Spots will use X (and equal Y) ration to Z for opening angle
+# - Rectangles use X and Y scale for dimensions
+# - Lines whave a 0 Y scale dimension (will need to be approximated)
+# - Range must be determined from context on import
+# (4) Blocks are exported with placeholders
+# - Block replacement is encoded in name
+# - Block transform is encoded in placeholder
+
 # Export currently selected objects
 # This enables recursive exporting of exploded block instances
+# which creates detail and placeholder constituents for blocks
 def ExportSelected(scale, path, name):
     #ShowStep("Scene or block export")
     # Include lights, exclude grips
@@ -334,7 +366,7 @@ def ExportSelected(scale, path, name):
             # On import contents of block will be merged,
             # and will then replace placeholders in scene and other blocks
             block = rs.BlockInstanceName(object)
-            block_name = safe_block_name(block)
+            block_name = safe_location_name(block)
             block_path = os.path.join(path, block_name)
             block_done = False
             try:
@@ -359,7 +391,7 @@ def ExportSelected(scale, path, name):
                 rs.DeleteObjects(instance_parts)
             if block_done:
                 # Create a placeholder
-                placeholders.append(Placeholder(object, scale))
+                placeholders.append(BlockLocation(object, scale))
             else:
                 # Remove empty directory
                 os.rmdir(block_path)
