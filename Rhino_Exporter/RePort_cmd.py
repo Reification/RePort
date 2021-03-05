@@ -228,7 +228,19 @@ def ModelScale():
     # https://en.wikipedia.org/wiki/Parsec
     if units == 25: scale = meter * 149597870700 * 648000 / 3.14159265358979323
     return scale
-    
+
+# Create a location encoding tetrahedron mesh
+def LocationMesh(origin, basis):
+    # Convert directions to positions relative to origin
+    for b in range(3):
+        basis[b] = rs.VectorAdd(basis[b], origin)
+    # Construct basis tetrahedron
+    mesh = rs.AddMesh(
+        [origin, basis[0], basis[1], basis[2]],
+        [[0, 2, 1], [0, 3, 2], [0, 1, 3], [1, 2, 3]]
+    )
+    return mesh
+
 # Create a placeholder tetrahedron that encodes the block instance transform
 # Units will be in meters to be consistent with import
 def BlockLocation(instance, scale):
@@ -237,21 +249,14 @@ def BlockLocation(instance, scale):
     p1 = [x.M01, x.M11, x.M21]  # Y Basis direction
     p2 = [x.M02, x.M12, x.M22]  # Z Basis direction
     p3 = [x.M03, x.M13, x.M23]  # Origin position
-    # Rescale mesh units
+    # Rescale transform units
     for i in range(3):
         p0[i] /= scale
         p1[i] /= scale
         p2[i] /= scale
-    # Convert directions to positions relative to origin
-    for i in range(3):
-        p0[i] += p3[i]
-        p1[i] += p3[i]
-        p2[i] += p3[i]
     # Construct basis tetrahedron
-    placeholder = rs.AddMesh(
-        [p3, p0, p1, p2],
-        [[0, 2, 1], [0, 3, 2], [0, 1, 3], [1, 2, 3]]
-    )
+    placeholder = LocationMesh(p3, [p0, p1, p2])
+    
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
     # in the case that block instances names are not unique
@@ -260,6 +265,33 @@ def BlockLocation(instance, scale):
     rs.ObjectName(placeholder, blockName + "=" + objectName)
     rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
     return placeholder
+
+# World unit vector basis
+unitBasis = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1]
+]
+
+# Projection of vector orthogonal to axis
+def VectorOrthogonalize(vector, axis):
+    m2 = rs.VectorDotProduct(axis, axis)
+    inner = rs.VectorDotProduct(axis, vector)
+    projected = rs.VectorScale(axis, inner / m2)
+    vector = rs.VectorSubtract(vector, projected)
+    return vector
+
+# Create a basis with direction as the final element
+def BasisFromDirection(direction):
+    b2 = rs.VectorUnitize(direction)
+    z = [0, 0, 0]
+    for b in range(3):
+        b0 = unitBasis[b]
+        if -0.5 < rs.VectorDotProduct(b0, b2) <= 0.5:
+            b0 = rs.VectorUnitize(VectorOrthogonalize(b0, b2))
+            b1 = rs.VectorCrossProduct(b2, b0)
+            return [b0, b1, b2]
+    return unitBasis
 
 # PROBLEM: Lights-only export fails!
 # PROBLEM: Lights are exported without rotation or shape!
@@ -271,58 +303,73 @@ def BlockLocation(instance, scale):
 # - Lines have a Y scale equal to the width
 # - Range must be determined from context on import
 # https://developer.rhino3d.com/api/rhinoscript/light_methods/light_methods.htm
-def LightLocation(light, scale):
+def LightLocation(light):
     if not rs.IsLight(light):
         return
     
-    lightName = SafeLocationName(rs.LightName(light))
-    print("LightName = " + lightName)
-    print("ObjectName = " + rs.ObjectName(light))
-    
+    # Default light transform
     position = rs.LightLocation(light)
-    print("Light position = " + str(position))
     direction = rs.LightDirection(light)
-    print("Light direction = " + str(direction))
+    basis = BasisFromDirection(direction)
     
+    # Modify transform according to light type
     lightType = "UnknownLight"
     if rs.IsPointLight(light):
         lightType = "PointLight"
-        clone = rs.AddPointLight(position)
-        rs.LightName(clone, lightName + "_CLONE_Point") #GOOD
+        #clone = rs.AddPointLight(position)
     if rs.IsDirectionalLight(light):
         lightType = "SunLight"
-        clone = rs.AddDirectionalLight(position, position + direction)
-        rs.LightName(clone, lightName + "_CLONE_Direction") # GOOD
+        #clone = rs.AddDirectionalLight(position, position + direction)
     if rs.IsSpotLight(light):
         lightType = "SpotLight"
-        radius = rs.SpotLightRadius(light)
-        print("Spot radius = " + str(radius))
-        bright = rs.SpotLightHardness(light)
-        clone = rs.AddSpotLight(position + direction, radius, position)
-        rs.SpotLightHardness(clone, bright)
-        rs.LightName(clone, lightName + "_CLONE_Spot") #GOOD
+        outer = rs.SpotLightRadius(light)
+        inner = rs.SpotLightHardness(light)
+        # NOTE: Inner is a fraction of outer
+        # but the inner wire circle is smaller than inner * outer
+        position = position + direction # at apex
+        direction = -direction # to surface
+        # Encode spot parameters in basis lengths
+        basis = [
+            basis[0] * outer,
+            -basis[1] * outer * inner,
+            direction
+        ]
+        #clone = rs.AddSpotLight(position, radius, position + direction)
+        #rs.SpotLightHardness(clone, bright)
     if rs.IsRectangularLight(light):
         # WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
         # https://developer.rhino3d.com/api/rhinoscript/light_methods/rectangularlightplane.htm
-        lightType = "QuadLight"
+        lightType = "QuadLight" # AreaLight
         quadVectors, quadLengths = rs.RectangularLightPlane(light)
-        position = quadVectors[0]
-        print("Rectangular position = " + str(position))
-        direction = -quadVectors[3]
-        print("Rectangular direction = " + str(direction))
-        heightBasis = quadVectors[1] * quadLengths[0]
-        print("Rectangular width = " + str(rs.VectorLength(widthBasis)))
-        widthBasis = quadVectors[2] * quadLengths[1]
-        print("Rectangular height = " + str(rs.VectorLength(heightBasis)))
-        clone = rs.AddRectangularLight(position, position + widthBasis, position + heightBasis)
-        rs.LightName(clone, lightName + "_CLONE_Rectangular") #GOOD
+        # QUESTION: Is position corner or center?
+        heightBasis = quadVectors[1] * quadLengths[0] / 2
+        widthBasis = quadVectors[2] * quadLengths[1] / 2
+        position = quadVectors[0] + heightBasis + widthBasis # same as light position
+        direction = -quadVectors[3] # negative of light direction
+        # Encode quad dimensions in basis lengths
+        basis = [
+            widthBasis,
+            -heightBasis,
+            direction
+        ]
+        #clone = rs.AddRectangularLight(position - (widthBasis + heightBasis), position + widthBasis, position + heightBasis)
     if rs.IsLinearLight(light):
+        # QUESTION: Should line center be used?
+        # Encode line segment in first basis
         lightType = "LineLight"
-        clone = rs.AddLinearLight (position, position + direction)
-        rs.LightName(clone, lightName + "_CLONE_Linear") #GOOD
-    print("LightType = " + lightType)
+        widthBasis = direction / 2
+        position = position + widthBasis
+        basis[2] = widthBasis
+        #clone = rs.AddLinearLight (position - widthBasis, position + widthBasis)
+    placeholder = LocationMesh(position, basis)
     
-    #rs.ObjectName(placeholder, lightType + "=" + objectName)
+    # Unity import will render names unique with a _N suffix on the N copy
+    # so block name is included as a prefix to facilitate matching
+    # in the case that block instances names are not unique
+    objectName = SafeLocationName(rs.ObjectName(light))
+    rs.ObjectName(placeholder, lightType + "=" + objectName)
+    rs.ObjectLayer(placeholder, rs.ObjectLayer(light))
+    return placeholder
 
 # https://developer.rhino3d.com/api/RhinoCommon/html/T_Rhino_DocObjects_ObjectType.htm
 # WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
@@ -393,8 +440,9 @@ def ExportSelected(scale, path, name):
     # Export lights
     for object in selected:
         if rs.ObjectType(object) == 256:
-            LightLocation(object, scale)
+            rs.SelectObject(LightLocation(object))
     
+    # TEMP: Exit with light placeholders present
     return
     
     # Export meshes
