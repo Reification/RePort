@@ -17,7 +17,7 @@ RePort_version = __plugin__.version
 # Remove unsafe characters from file name
 # https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
 # https://stackoverflow.com/questions/62771/how-do-i-check-if-a-given-string-is-a-legal-valid-file-name-under-windows
-def safe_file_name(name):
+def SafeFileName(name):
     name = name.replace('<', "")
     name = name.replace('>', "")
     name = name.replace(':', "")
@@ -30,15 +30,17 @@ def safe_file_name(name):
     return name
 
 # Remove unsafe characters from location name
-def safe_location_name(name):
-    name = safe_file_name(name)
+def SafeLocationName(name):
+    if name is None:
+        return ""
+    name = SafeFileName(name)
     name = name.replace("=", "-")
     return name
 
 # Rhino export looks at filename suffix to determine format
 # Unity import looks for suffix to determined format,
 # and at names before suffix to determine provenance.
-def save_suffix():
+def SaveSuffix():
     return ".3dm_" + str(Rhino_version) + ".fbx"
 
 # IDEA: When exporting placeholders
@@ -49,26 +51,19 @@ def save_suffix():
 # NOTE: GeometryOnly=Yes would exclude BOTH cameras and lights
 # NOTE: Unrecognized commands are interpreted as filename!
 # When running Rhino5 entering Version=6 saves "Version=6.3dm"
-def save_options():
-    # https://docs.mcneel.com/rhino/7/help/en-us/commands/save.htm
-    # https://docs.mcneel.com/rhino/6/help/en-us/commands/save.htm
-    if Rhino_version == 7 or Rhino_version == 6:
-        return \
-            "Version=6 "\
-            "SaveTextures=Yes "\
-            "GeometryOnly=No "\
-            "SavePluginData=No "\
-            "SaveSmall=Yes "\
-            "SaveNotes=No "
+def SaveOptions():
     # https://docs.mcneel.com/rhino/5/help/en-us/commands/save.htm
-    if Rhino_version == 5:
-        return \
-            "Version=5 "\
-            "SaveTextures=Yes "\
-            "GeometryOnly=No "\
-            "SavePluginData=No "\
-            "SaveSmall=Yes "
-    raise Exception("Unsupported Rhino Rhino_version: " + str(Rhino_version))
+    options = "Version=" + str(Rhino_version) + " "\
+        "SaveTextures=Yes "\
+        "GeometryOnly=No "\
+        "SavePluginData=No "\
+        "SaveSmall=Yes "
+    # https://docs.mcneel.com/rhino/6/help/en-us/commands/save.htm
+    # https://docs.mcneel.com/rhino/7/help/en-us/commands/save.htm
+    if Rhino_version >= 6:
+        options += \
+            "SaveNotes=No "
+    return options
 
 # FBX export options targeting Unity's import process
 # NOTE: Enter exits fbx options
@@ -163,15 +158,13 @@ def meshing_options(detail):
 # Import could subdivide & subsample.
 # Lightmap should be contributing only.
 
-# PROBLEM: Lights-only export does not work!
-
 # NOTE: file_name followed by space will exit save options
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
 def ExportModel(path, name, detail=0):
-    file_name = os.path.join(path, name + save_suffix())
+    file_name = os.path.join(path, name + SaveSuffix())
     return rs.Command(
         "-Export " +\
-        save_options() +\
+        SaveOptions() +\
         '"' + file_name + '" ' +\
         fbx_options() + "Enter " +\
         meshing_options(detail) + "Enter " +\
@@ -186,7 +179,7 @@ def ExportBlock(path, name, detail=0):
     return rs.Command(
         "-BlockManager Export " +\
         '"' + name + '" ' +\
-        save_options() +\
+        SaveOptions() +\
         '"' + file_name + '" ' +\
         fbx_options() + "Enter " +\
         meshing_options(detail) + "Enter " +\
@@ -262,15 +255,78 @@ def BlockLocation(instance, scale):
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
     # in the case that block instances names are not unique
-    objectName = rs.ObjectName(instance)
-    if objectName is None:
-        objectName = ""
-    blockName = safe_location_name(rs.BlockInstanceName(instance))
-    rs.ObjectName(placeholder, objectName + "=" + blockName)
+    objectName = SafeLocationName(rs.ObjectName(instance))
+    blockName = SafeLocationName(rs.BlockInstanceName(instance))
+    rs.ObjectName(placeholder, blockName + "=" + objectName)
     rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
     return placeholder
 
+# PROBLEM: Lights-only export fails!
+# PROBLEM: Lights are exported without rotation or shape!
+# SOLUTION: Create a placeholder tetrahedron that encodes light parameters
+# - Light color, intensity and type are exported in light objects
+# - All light types will be encoded in name
+# - Rectangles use X and Y scale for dimensions
+# - Spots will use X (and equal Y) ratio to Z=1 for opening angle
+# - Lines have a Y scale equal to the width
+# - Range must be determined from context on import
+# https://developer.rhino3d.com/api/rhinoscript/light_methods/light_methods.htm
+def LightLocation(light, scale):
+    if not rs.IsLight(light):
+        return
+    
+    lightName = SafeLocationName(rs.LightName(light))
+    print("LightName = " + lightName)
+    print("ObjectName = " + rs.ObjectName(light))
+    
+    position = rs.LightLocation(light)
+    print("Light position = " + str(position))
+    direction = rs.LightDirection(light)
+    print("Light direction = " + str(direction))
+    
+    lightType = "UnknownLight"
+    if rs.IsPointLight(light):
+        lightType = "PointLight"
+        clone = rs.AddPointLight(position)
+        rs.LightName(clone, lightName + "_CLONE_Point") #GOOD
+    if rs.IsDirectionalLight(light):
+        lightType = "SunLight"
+        clone = rs.AddDirectionalLight(position, position + direction)
+        rs.LightName(clone, lightName + "_CLONE_Direction") # GOOD
+    if rs.IsSpotLight(light):
+        lightType = "SpotLight"
+        radius = rs.SpotLightRadius(light)
+        print("Spot radius = " + str(radius))
+        bright = rs.SpotLightHardness(light)
+        clone = rs.AddSpotLight(position + direction, radius, position)
+        rs.SpotLightHardness(clone, bright)
+        rs.LightName(clone, lightName + "_CLONE_Spot") #GOOD
+    if rs.IsRectangularLight(light):
+        # WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
+        # https://developer.rhino3d.com/api/rhinoscript/light_methods/rectangularlightplane.htm
+        lightType = "QuadLight"
+        quadVectors, quadLengths = rs.RectangularLightPlane(light)
+        position = quadVectors[0]
+        print("Rectangular position = " + str(position))
+        direction = -quadVectors[3]
+        print("Rectangular direction = " + str(direction))
+        heightBasis = quadVectors[1] * quadLengths[0]
+        print("Rectangular width = " + str(rs.VectorLength(widthBasis)))
+        widthBasis = quadVectors[2] * quadLengths[1]
+        print("Rectangular height = " + str(rs.VectorLength(heightBasis)))
+        clone = rs.AddRectangularLight(position, position + widthBasis, position + heightBasis)
+        rs.LightName(clone, lightName + "_CLONE_Rectangular") #GOOD
+    if rs.IsLinearLight(light):
+        lightType = "LineLight"
+        clone = rs.AddLinearLight (position, position + direction)
+        rs.LightName(clone, lightName + "_CLONE_Linear") #GOOD
+    print("LightType = " + lightType)
+    
+    #rs.ObjectName(placeholder, lightType + "=" + objectName)
+
 # https://developer.rhino3d.com/api/RhinoCommon/html/T_Rhino_DocObjects_ObjectType.htm
+# WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
+# https://developer.rhino3d.com/api/rhinoscript/object_methods/objecttype.htm
 #    - None                  0             Nothing.
 #    X Point                 1             A point.
 #    X PointSet              2             A point set or cloud.
@@ -300,7 +356,7 @@ def BlockLocation(instance, scale):
 #    X Phantom               268435456     A phantom object. https://discourse.mcneel.com/t/what-is-the-phantom-object-type/119363/7
 #    X ClipPlane             536870912     A clipping plane.
 #    V Extrusion             1073741824    An extrusion.
-#    - AnyObject             4294967295    All bits set. 
+#    - AnyObject             4294967295    All bits set.
 single_export = 32 + 256  # Single export at fixed detail
 detail_export = 8 + 16 + 262144 + 1073741824  # Multiple level of detail export
 switch_export = 4096  # Block instances are switched with placeholders
@@ -334,6 +390,13 @@ def ExportSelected(scale, path, name):
     rs.UnselectAllObjects()
     export_exists = False
     
+    # Export lights
+    for object in selected:
+        if rs.ObjectType(object) == 256:
+            LightLocation(object, scale)
+    
+    return
+    
     # Export meshes
     for object in selected:
         if rs.ObjectType(object) & single_export:
@@ -366,7 +429,7 @@ def ExportSelected(scale, path, name):
             # On import contents of block will be merged,
             # and will then replace placeholders in scene and other blocks
             block = rs.BlockInstanceName(object)
-            block_name = safe_location_name(block)
+            block_name = SafeLocationName(block)
             block_path = os.path.join(path, block_name)
             block_done = False
             try:
