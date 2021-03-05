@@ -85,9 +85,6 @@ def fbx_options():
             "ExportViews=No "
     return options
 
-# TODO: Adapt distance options to file units
-# IDEA: Interactive mode could allow modification of defaults
-
 # Parametric Surface Meshing Options
 # https://wiki.mcneel.com/rhino/meshsettings
 # https://docs.mcneel.com/rhino/7/help/en-us/popup_moreinformation/polygon_mesh_detailed_options.htm
@@ -149,6 +146,15 @@ def meshing_options(detail):
                 "SubdivisionContext=Adaptive "
     return options
 
+# TODO: Adapt distance options to file units.
+# IDEA: Adapt angle parameters (or maximum distance) to object size,
+# so that large curves are not heavily segmented.
+
+# NOTE: High levels of detail on large objects slows rendering,
+# since rendered detail selection is proportionate to screen size.
+# IDEA: If mesh edge size was consistent then it could be used
+# to modify the screen size choice.
+
 # NOTE: Least resolved detail level is used for collisions,
 # so maximum distance cannot diverge too significantly.
 # IDEA: Physics detail level should be based on object scale.
@@ -157,6 +163,10 @@ def meshing_options(detail):
 # Export could be at maximum level of detail.
 # Import could subdivide & subsample.
 # Lightmap should be contributing only.
+
+# IDEA: Interactive mode could allow modification of defaults
+# Including count or even parameters.
+# NOTE: This would require cached preferences.
 
 # NOTE: file_name followed by space will exit save options
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
@@ -229,6 +239,29 @@ def ModelScale():
     if units == 25: scale = meter * 149597870700 * 648000 / 3.14159265358979323
     return scale
 
+# Copy of unit basis vector
+def UnitVector(b):
+    vector = [0, 0, 0]
+    vector[b] = 1
+    return rs.CreateVector(vector)
+
+# Copy of unit basis    
+def UnitBasis():
+    return [UnitVector(0), UnitVector(1), UnitVector(2)]
+
+# Create a basis with direction as the final element
+def BasisFromDirection(direction):
+    b2 = rs.VectorUnitize(direction)
+    for b in range(3):
+        b0 = UnitVector(b)
+        # At least one unit vector must meet this condition
+        inner = rs.VectorDotProduct(b0, b2)
+        if -0.5 < inner <= 0.5:
+            b0 = rs.VectorUnitize(b0 - b2 * inner)
+            b1 = rs.VectorCrossProduct(b2, b0)
+            return [b0, b1, b2]
+    return UnitBasis()
+
 # Create a location encoding tetrahedron mesh
 def LocationMesh(origin, basis):
     # Convert directions to positions relative to origin
@@ -266,44 +299,18 @@ def BlockLocation(instance, scale):
     rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
     return placeholder
 
-# World unit vector basis
-unitBasis = [
-    [1, 0, 0],
-    [0, 1, 0],
-    [0, 0, 1]
-]
-
-# Projection of vector orthogonal to axis
-def VectorOrthogonalize(vector, axis):
-    m2 = rs.VectorDotProduct(axis, axis)
-    inner = rs.VectorDotProduct(axis, vector)
-    projected = rs.VectorScale(axis, inner / m2)
-    vector = rs.VectorSubtract(vector, projected)
-    return vector
-
-# Create a basis with direction as the final element
-def BasisFromDirection(direction):
-    b2 = rs.VectorUnitize(direction)
-    z = [0, 0, 0]
-    for b in range(3):
-        b0 = unitBasis[b]
-        if -0.5 < rs.VectorDotProduct(b0, b2) <= 0.5:
-            b0 = rs.VectorUnitize(VectorOrthogonalize(b0, b2))
-            b1 = rs.VectorCrossProduct(b2, b0)
-            return [b0, b1, b2]
-    return unitBasis
-
 # PROBLEM: Lights-only export fails!
 # PROBLEM: Lights are exported without rotation or shape!
 # SOLUTION: Create a placeholder tetrahedron that encodes light parameters
-# - Light color, intensity and type are exported in light objects
-# - All light types will be encoded in name
+# - Rhino exports color, intensity and type
+# - Placeholders will be created with corresponding names
+# - Light type will be encoded in the name in case of unsupported types
 # - Rectangles use X and Y scale for dimensions
 # - Spots will use X (and equal Y) ratio to Z=1 for opening angle
 # - Lines have a Y scale equal to the width
 # - Range must be determined from context on import
 # https://developer.rhino3d.com/api/rhinoscript/light_methods/light_methods.htm
-def LightLocation(light):
+def LightLocation(light, scale):
     if not rs.IsLight(light):
         return
     
@@ -318,33 +325,28 @@ def LightLocation(light):
         lightType = "PointLight"
         #clone = rs.AddPointLight(position)
     if rs.IsDirectionalLight(light):
-        lightType = "SunLight"
+        lightType = "DirectionalLight"
         #clone = rs.AddDirectionalLight(position, position + direction)
     if rs.IsSpotLight(light):
         lightType = "SpotLight"
         outer = rs.SpotLightRadius(light)
-        inner = rs.SpotLightHardness(light)
-        # NOTE: Inner is a fraction of outer
-        # but the inner wire circle is smaller than inner * outer
-        position = position + direction # at apex
-        direction = -direction # to surface
+        inner = rs.SpotLightHardness(light) * outer
         # Encode spot parameters in basis lengths
         basis = [
             basis[0] * outer,
-            -basis[1] * outer * inner,
+            basis[1] * inner,
             direction
         ]
-        #clone = rs.AddSpotLight(position, radius, position + direction)
-        #rs.SpotLightHardness(clone, bright)
+        #clone = rs.AddSpotLight(position + direction, outer, position)
+        #rs.SpotLightHardness(clone, inner / outer)
     if rs.IsRectangularLight(light):
         # WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
         # https://developer.rhino3d.com/api/rhinoscript/light_methods/rectangularlightplane.htm
-        lightType = "QuadLight" # AreaLight
+        lightType = "RectangularLight"
         quadVectors, quadLengths = rs.RectangularLightPlane(light)
-        # QUESTION: Is position corner or center?
         heightBasis = quadVectors[1] * quadLengths[0] / 2
         widthBasis = quadVectors[2] * quadLengths[1] / 2
-        position = quadVectors[0] + heightBasis + widthBasis # same as light position
+        position = quadVectors[0] + heightBasis + widthBasis # center
         direction = -quadVectors[3] # negative of light direction
         # Encode quad dimensions in basis lengths
         basis = [
@@ -352,17 +354,23 @@ def LightLocation(light):
             -heightBasis,
             direction
         ]
-        #clone = rs.AddRectangularLight(position - (widthBasis + heightBasis), position + widthBasis, position + heightBasis)
+        #corner = position - (widthBasis + heightBasis)
+        #clone = rs.AddRectangularLight(corner, corner + widthBasis * 2, corner + heightBasis * 2)
     if rs.IsLinearLight(light):
-        # QUESTION: Should line center be used?
         # Encode line segment in first basis
-        lightType = "LineLight"
+        lightType = "LinearLight"
         widthBasis = direction / 2
         position = position + widthBasis
         basis[2] = widthBasis
         #clone = rs.AddLinearLight (position - widthBasis, position + widthBasis)
+    
+    # Create scaled mesh
+    for b in range(3):
+        basis[b] /= scale
     placeholder = LocationMesh(position, basis)
     
+    # NOTE: Lights have no corresponding exported block,
+    # but the same notation will be used to configure lights in the exported model.
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
     # in the case that block instances names are not unique
@@ -404,9 +412,11 @@ def LightLocation(light):
 #    X ClipPlane             536870912     A clipping plane.
 #    V Extrusion             1073741824    An extrusion.
 #    - AnyObject             4294967295    All bits set.
-single_export = 32 + 256  # Single export at fixed detail
+lights_export = 256 # Lights with configuration placeholders
+meshes_export = 32  # Single export at fixed detail
 detail_export = 8 + 16 + 262144 + 1073741824  # Multiple level of detail export
-switch_export = 4096  # Block instances are switched with placeholders
+blocks_export = 4096  # Block instances are replaced by transform placeholders
+export_select = lights_export | meshes_export | detail_export | blocks_export
 
 # Pause exporting to show additions and selection
 def ShowStep(step_name):
@@ -414,44 +424,39 @@ def ShowStep(step_name):
     input = rs.GetString("Showing step: " + step_name + " (Press Enter to continue)")
     rs.EnableRedraw(False)
 
-# FIXME: Update the export interface
-# (1) Meshes export as meshes without suffix
-# (2) Details are also exported as meshes# with suffix
-# (3) Lights are exported with added placeholders
-# - Light type is encoded in name
-# - Spots will use X (and equal Y) ration to Z for opening angle
-# - Rectangles use X and Y scale for dimensions
-# - Lines whave a 0 Y scale dimension (will need to be approximated)
-# - Range must be determined from context on import
-# (4) Blocks are exported with placeholders
-# - Block replacement is encoded in name
-# - Block transform is encoded in placeholder
-
 # Export currently selected objects
 # This enables recursive exporting of exploded block instances
 # which creates detail and placeholder constituents for blocks
 def ExportSelected(scale, path, name):
     #ShowStep("Scene or block export")
-    # Include lights, exclude grips
+    # Include lights, exclude grips in selected
     selected = rs.SelectedObjects(True, False)
     rs.UnselectAllObjects()
     export_exists = False
     
     # Export lights
+    # NOTE: Lights must be exported separately so that
+    # placeholder meshes can be imported without modification.
+    placeholders = []
     for object in selected:
-        if rs.ObjectType(object) == 256:
-            rs.SelectObject(LightLocation(object))
-    
-    # TEMP: Exit with light placeholders present
-    return
+        if rs.ObjectType(object) & lights_export:
+            rs.SelectObject(object)
+            lightLocation = LightLocation(object, scale)
+            placeholders.append(lightLocation)
+            rs.SelectObject(lightLocation)
+    if len(rs.SelectedObjects(True, False)) > 0:
+        #ShowStep("Light export")
+        ExportModel(path, name + ".lights")
+        rs.DeleteObjects(placeholders)
+        export_exists = True
+    rs.UnselectAllObjects()
     
     # Export meshes
     for object in selected:
-        if rs.ObjectType(object) & single_export:
+        if rs.ObjectType(object) & meshes_export:
             rs.SelectObject(object)
-    # Include lights, exclude grips
     if len(rs.SelectedObjects(True, False)) > 0:
-        #ShowStep("Mesh & light objects export")
+        #ShowStep("Mesh objects export")
         ExportModel(path, name + ".meshes")
         export_exists = True
     rs.UnselectAllObjects()
@@ -460,19 +465,20 @@ def ExportSelected(scale, path, name):
     for object in selected:
         if rs.ObjectType(object) & detail_export:
             rs.SelectObject(object)
-    # Exclude both lights and grips
-    if len(rs.SelectedObjects(False, False)) > 0:
-        #ShowStep("parametric objects export")
-        ExportModel(path, name + ".detail2", 2)
-        ExportModel(path, name + ".detail1", 1)
-        ExportModel(path, name + ".detail0", 0)
+    if len(rs.SelectedObjects(True, False)) > 0:
+        #ShowStep("Parametric objects export")
+        ExportModel(path, name + ".meshes0", 0)
+        ExportModel(path, name + ".meshes1", 1)
+        ExportModel(path, name + ".meshes2", 2)
         export_exists = True
     rs.UnselectAllObjects()
     
     # Export blocks
+    # NOTE: Block placeholders must be exported separately
+    # so that meshes can be imported with modification.
     placeholders = []
     for object in selected:
-        if rs.ObjectType(object) & switch_export:
+        if rs.ObjectType(object) & blocks_export:
             # Export block constituents into subdirectory
             # On import contents of block will be merged,
             # and will then replace placeholders in scene and other blocks
@@ -492,7 +498,7 @@ def ExportSelected(scale, path, name):
                 # so that constituent blocks will be exported.
                 instance_parts = rs.ExplodeBlockInstance(instance)
                 rs.SelectObjects(instance_parts)
-                #ShowStep(block + " instance")
+                #ShowStep("Block " + block + " export")
                 # IMPORTANT: block subdirectory is prepended to name
                 # so that constituent blocks will be discovered or exported
                 # in adjacent directories.
@@ -508,7 +514,7 @@ def ExportSelected(scale, path, name):
                 os.rmdir(block_path)
     if len(placeholders) > 0:
         rs.SelectObjects(placeholders)
-        #ShowStep("block instance replacements")
+        #ShowStep("Block placeholder export")
         ExportModel(path, name + ".places")
         rs.DeleteObjects(placeholders)
         export_exists = True
@@ -517,14 +523,6 @@ def ExportSelected(scale, path, name):
     rs.SelectObjects(selected)
     return export_exists
 
-# TODO: Create interactive selection option
-# Select all exportable objects in scene
-def SelectScene(path, name):
-    selected_types = single_export | detail_export | switch_export
-    rs.ObjectsByType(geometry_type=selected_types, select=True, state=0)
-
-# TODO: Handle a cancel during path selection without triggering a stack trace
-# TODO: Make path selection interaction optional
 # Default: create a folder next to active doc with the same name!
 def GetExportPath(is_interactive):
     name = sc.doc.ActiveDoc.Name[:-4]  # Known safe
@@ -550,8 +548,6 @@ def GetExportPath(is_interactive):
         # will not raise an error.
     return path, name
 
-# TODO: Find a way to not register scene changes
-
 def RunCommand(is_interactive):
     command_preamble = __commandname__ + " v" + RePort_version
     if is_interactive:
@@ -569,9 +565,13 @@ def RunCommand(is_interactive):
     scale = ModelScale()
     try:
         rs.EnableRedraw(False)
-        SelectScene(*path_name)
+        # Select all exportable objects in scene
+        rs.ObjectsByType(geometry_type=export_select, select=True, state=0)
         ExportSelected(scale, *path_name)
     finally:
+        # TODO: Undo all script changes, including selection modifications
+        # - failed execution will be cleaned
+        # - successful execution will not appear to modify file
         rs.UnselectAllObjects()
         rs.EnableRedraw(True)
     print(command_preamble + ": success")
