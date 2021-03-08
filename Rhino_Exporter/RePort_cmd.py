@@ -12,7 +12,54 @@ __commandname__ = "RePort"
 
 Rhino_version = RhinoApp.Version.Major
 
-RePort_version = __plugin__.version 
+RePort_version = __plugin__.version
+
+# https://developer.rhino3d.com/api/RhinoCommon/html/T_Rhino_DocObjects_ObjectType.htm
+# WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
+# https://developer.rhino3d.com/api/rhinoscript/object_methods/objecttype.htm
+#    - None                  0             Nothing.
+#    X Point                 1             A point.
+#    X PointSet              2             A point set or cloud.
+#    X Curve                 4             A curve.
+#    V Surface               8             A surface.
+#    V Brep                  16            A brep.
+#    V Mesh                  32            A mesh.
+#    V Light                 256           A rendering light.
+#    X Annotation            512           An annotation.
+#    X InstanceDefinition    2048          A block definition.
+#    V InstanceReference     4096          A block reference.
+#    X TextDot               8192          A text dot.
+#    X Grip                  16384         Selection filter value - not a real object type.
+#    X Detail                32768         A detail.
+#    X Hatch                 65536         A hatch.
+#    X MorphControl          131072        A morph control.
+#    V SubD                  262144        A SubD object.
+#    X BrepLoop              524288        A brep loop.
+#    X BrepVertex            1048576       a brep vertex.
+#    X PolysrfFilter         2097152       Selection filter value - not a real object type.
+#    X EdgeFilter            4194304       Selection filter value - not a real object type.
+#    X PolyedgeFilter        8388608       Selection filter value - not a real object type.
+#    X MeshVertex            16777216      A mesh vertex.
+#    X MeshEdge              33554432      A mesh edge.
+#    X MeshFace              67108864      A mesh face.
+#    X Cage                  134217728     A cage.
+#    X Phantom               268435456     A phantom object. https://discourse.mcneel.com/t/what-is-the-phantom-object-type/119363/7
+#    X ClipPlane             536870912     A clipping plane.
+#    V Extrusion             1073741824    An extrusion.
+#    - AnyObject             4294967295    All bits set.
+lights_export = 256 # Lights with configuration placeholders
+meshes_export = 32  # Single export at fixed detail
+detail_export = 8 + 16 + 262144 + 1073741824  # Multiple level of detail export
+blocks_export = 4096  # Block instances are replaced by transform placeholders
+export_select = lights_export | meshes_export | detail_export | blocks_export
+
+# Select all objects that will be exported
+def SelectExport():
+    rs.ObjectsByType(geometry_type=export_select, select=True, state=0)
+
+# Get selected objects that will be exported
+def SelectedObjects():
+    return rs.SelectedObjects(True, False)
 
 # Remove unsafe characters from file name
 # https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
@@ -29,13 +76,51 @@ def SafeFileName(name):
     name = name.replace('*', "")
     return name
 
-# Remove unsafe characters from location name
-def SafeLocationName(name):
+# Remove unsafe characters from object name
+def SafeObjectName(name):
     if name is None:
         return ""
     name = SafeFileName(name)
     name = name.replace("=", "-")
     return name
+
+# QUESTION: Is it possible to also render block names safe?
+
+# PROBLEM: Objects may have empty, non-unique opr unsafe names
+# SOLUTION: Give each object a unique safe name, and create
+# a dictionary to revert these changes after export.
+def UniqueRename(name_map):
+    selected = SelectedObjects()
+    for object in selected:
+        old_name = rs.ObjectName(object)
+        new_name = SafeObjectName(old_name)
+        if len(new_name) == 0:
+            new_name = "Unknown"
+            if rs.IsObject(object):
+                new_name = "Object"
+            # NOTE: IsObject and IsLight can both be true
+            # so IsLight must be checked after
+            if rs.IsLight(object):
+                new_name = "Light"
+        if old_name is None or len(old_name) == 0 or new_name in name_map:
+            suffix = len(name_map)
+            while new_name + "_" + str(suffix) in name_map:
+                suffix += 1
+            new_name += "_" + str(suffix)
+        name_map[new_name] = old_name
+        rs.ObjectName(object, new_name)
+
+# Revert name changes
+def RevertRename(name_map):
+    selected = SelectedObjects()
+    for object in selected:
+        new_name = rs.ObjectName(object)
+        if new_name in name_map:
+            old_name = name_map[new_name]
+            if old_name is None:
+                old_name = ""  # Restores name is None state
+            rs.ObjectName(object, old_name)
+            del name_map[new_name]
 
 # Rhino export looks at filename suffix to determine format
 # Unity import looks for suffix to determined format,
@@ -293,9 +378,10 @@ def BlockLocation(instance, scale):
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
     # in the case that block instances names are not unique
-    objectName = SafeLocationName(rs.ObjectName(instance))
-    blockName = SafeLocationName(rs.BlockInstanceName(instance))
-    rs.ObjectName(placeholder, blockName + "=" + objectName)
+    block = rs.BlockInstanceName(object)
+    block_name = SafeObjectName(block)
+    object_name = rs.ObjectName(instance)
+    rs.ObjectName(placeholder, block_name + "=" + object_name)
     rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
     return placeholder
 
@@ -374,49 +460,10 @@ def LightLocation(light, scale):
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
     # in the case that block instances names are not unique
-    objectName = SafeLocationName(rs.ObjectName(light))
+    objectName = rs.ObjectName(light)
     rs.ObjectName(placeholder, lightType + "=" + objectName)
     rs.ObjectLayer(placeholder, rs.ObjectLayer(light))
     return placeholder
-
-# https://developer.rhino3d.com/api/RhinoCommon/html/T_Rhino_DocObjects_ObjectType.htm
-# WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
-# https://developer.rhino3d.com/api/rhinoscript/object_methods/objecttype.htm
-#    - None                  0             Nothing.
-#    X Point                 1             A point.
-#    X PointSet              2             A point set or cloud.
-#    X Curve                 4             A curve.
-#    V Surface               8             A surface.
-#    V Brep                  16            A brep.
-#    V Mesh                  32            A mesh.
-#    V Light                 256           A rendering light.
-#    X Annotation            512           An annotation.
-#    X InstanceDefinition    2048          A block definition.
-#    V InstanceReference     4096          A block reference.
-#    X TextDot               8192          A text dot.
-#    X Grip                  16384         Selection filter value - not a real object type.
-#    X Detail                32768         A detail.
-#    X Hatch                 65536         A hatch.
-#    X MorphControl          131072        A morph control.
-#    V SubD                  262144        A SubD object.
-#    X BrepLoop              524288        A brep loop.
-#    X BrepVertex            1048576       a brep vertex.
-#    X PolysrfFilter         2097152       Selection filter value - not a real object type.
-#    X EdgeFilter            4194304       Selection filter value - not a real object type.
-#    X PolyedgeFilter        8388608       Selection filter value - not a real object type.
-#    X MeshVertex            16777216      A mesh vertex.
-#    X MeshEdge              33554432      A mesh edge.
-#    X MeshFace              67108864      A mesh face.
-#    X Cage                  134217728     A cage.
-#    X Phantom               268435456     A phantom object. https://discourse.mcneel.com/t/what-is-the-phantom-object-type/119363/7
-#    X ClipPlane             536870912     A clipping plane.
-#    V Extrusion             1073741824    An extrusion.
-#    - AnyObject             4294967295    All bits set.
-lights_export = 256 # Lights with configuration placeholders
-meshes_export = 32  # Single export at fixed detail
-detail_export = 8 + 16 + 262144 + 1073741824  # Multiple level of detail export
-blocks_export = 4096  # Block instances are replaced by transform placeholders
-export_select = lights_export | meshes_export | detail_export | blocks_export
 
 # Pause exporting to show additions and selection
 def ShowStep(step_name):
@@ -430,7 +477,7 @@ def ShowStep(step_name):
 def ExportSelected(scale, path, name):
     #ShowStep("Scene or block export")
     # Include lights, exclude grips in selected
-    selected = rs.SelectedObjects(True, False)
+    selected = SelectedObjects()
     rs.UnselectAllObjects()
     export_exists = False
     
@@ -444,7 +491,7 @@ def ExportSelected(scale, path, name):
             lightLocation = LightLocation(object, scale)
             placeholders.append(lightLocation)
             rs.SelectObject(lightLocation)
-    if len(rs.SelectedObjects(True, False)) > 0:
+    if len(SelectedObjects()) > 0:
         #ShowStep("Light export")
         ExportModel(path, name + ".lights")
         rs.DeleteObjects(placeholders)
@@ -455,7 +502,7 @@ def ExportSelected(scale, path, name):
     for object in selected:
         if rs.ObjectType(object) & meshes_export:
             rs.SelectObject(object)
-    if len(rs.SelectedObjects(True, False)) > 0:
+    if len(SelectedObjects()) > 0:
         #ShowStep("Mesh objects export")
         ExportModel(path, name + ".meshes")
         export_exists = True
@@ -465,7 +512,7 @@ def ExportSelected(scale, path, name):
     for object in selected:
         if rs.ObjectType(object) & detail_export:
             rs.SelectObject(object)
-    if len(rs.SelectedObjects(True, False)) > 0:
+    if len(SelectedObjects()) > 0:
         #ShowStep("Parametric objects export")
         ExportModel(path, name + ".meshes0", 0)
         ExportModel(path, name + ".meshes1", 1)
@@ -483,7 +530,7 @@ def ExportSelected(scale, path, name):
             # On import contents of block will be merged,
             # and will then replace placeholders in scene and other blocks
             block = rs.BlockInstanceName(object)
-            block_name = SafeLocationName(block)
+            block_name = SafeObjectName(block)
             block_path = os.path.join(path, block_name)
             block_done = False
             try:
@@ -522,46 +569,6 @@ def ExportSelected(scale, path, name):
     # Restore selection
     rs.SelectObjects(selected)
     return export_exists
-
-# PROBLEM: Objects may have empty or non-unique names
-# SOLUTION: Give each object a unique name, and create
-# a dictionary to undo these changes after export
-def UniqueRename(name_map):
-    selected = rs.SelectedObjects(True, False)
-    for object in selected:
-        old_name = rs.ObjectName(object)
-        new_name = old_name
-        if old_name is None or len(old_name) == 0:
-            new_name = "Unknown"
-            if rs.IsObject(object):
-                new_name = "Object"
-            # NOTE: IsObject and IsLight can both be true, so IsLight be second
-            if rs.IsLight(object):
-                new_name = "Light"
-        if old_name is None or len(old_name) == 0 or new_name in name_map:
-            suffix = len(name_map)
-            while new_name + "_" + str(suffix) in name_map:
-                suffix += 1
-            new_name += "_" + str(suffix)
-        name_map[new_name] = old_name
-        rs.ObjectName(object, new_name)
-
-# BUG: The undo method is only needed because there does not appear
-# to be a way to undo all changes made by a script from within the script.
-# NOTE: If no such method exists, the same would be useful to manage
-# placeholder objects.
-
-# Revert name changes
-def RevertRename(name_map):
-    selected = rs.SelectedObjects(True, False)
-    for object in selected:
-        new_name = rs.ObjectName(object)
-        if new_name in name_map:
-            old_name = name_map[new_name]
-            if old_name is None:
-                old_name = ""  # Restores name is None state
-            rs.ObjectName(object, old_name)
-            del name_map[new_name]
 
 # Default: create a folder next to active doc with the same name!
 def GetExportPath(is_interactive):
@@ -603,21 +610,26 @@ def RunCommand(is_interactive):
         return
     
     name_map = {}
+    selected = rs.SelectedObjects(True, True)
     try:
         rs.EnableRedraw(False)
         
         # Select all exportable objects in scene
-        rs.ObjectsByType(geometry_type=export_select, select=True, state=0)
+        SelectExport()
         UniqueRename(name_map)
         scale = ModelScale()
         ExportSelected(scale, *path_name)
     finally:
+        # FIXME: Placeholders are not tracked for undo steps
         # TODO: Undo all script changes, including selection modifications
         # - failed execution will be cleaned
         # - successful execution will not appear to modify file
-        rs.ObjectsByType(geometry_type=export_select, select=True, state=0)
+        # GOAL: Access Rhino's internal undo tracker so that the export
+        # will be verified to have made no change to document.
+        SelectExport()
         RevertRename(name_map)
         rs.UnselectAllObjects()
+        rs.SelectObjects(selected)
         
         rs.EnableRedraw(True)
     print(command_preamble + ": success")
