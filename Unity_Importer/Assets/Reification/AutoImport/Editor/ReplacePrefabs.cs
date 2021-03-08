@@ -18,9 +18,6 @@ namespace Reification {
 		const string menuItemName = "Reification/Replace Prefabs";
 		const int menuItemPriority = 20;
 
-		// IMPORTANT: It should be possible to apply this directly to prefabs
-		// NOTE: There is some risk of recursion - hopefully that throws an error.
-
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		static private bool Validate() {
 			if(Selection.gameObjects.Length == 0) return false;
@@ -167,7 +164,7 @@ namespace Reification {
 			foreach(var child in children) {
 				var name_parts = child.name.Split('=');
 				if(name_parts.Length == 1) continue;
-				if(prefabs.TryGetValue(name_parts[name_parts.Length - 1], out var cached)) {
+				if(prefabs.TryGetValue(name_parts[0], out var cached)) {
 					// When reimporting retain previous replacement if present
 					string replaceName = ConfigureName(child);
 					var replaceList = child.transform.parent.NameFindInChildren(replaceName);
