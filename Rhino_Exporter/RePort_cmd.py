@@ -523,6 +523,46 @@ def ExportSelected(scale, path, name):
     rs.SelectObjects(selected)
     return export_exists
 
+# PROBLEM: Objects may have empty or non-unique names
+# SOLUTION: Give each object a unique name, and create
+# a dictionary to undo these changes after export
+def UniqueRename(name_map):
+    selected = rs.SelectedObjects(True, False)
+    for object in selected:
+        old_name = rs.ObjectName(object)
+        new_name = old_name
+        if old_name is None or len(old_name) == 0:
+            new_name = "Unknown"
+            if rs.IsObject(object):
+                new_name = "Object"
+            # NOTE: IsObject and IsLight can both be true, so IsLight be second
+            if rs.IsLight(object):
+                new_name = "Light"
+        if old_name is None or len(old_name) == 0 or new_name in name_map:
+            suffix = len(name_map)
+            while new_name + "_" + str(suffix) in name_map:
+                suffix += 1
+            new_name += "_" + str(suffix)
+        name_map[new_name] = old_name
+        rs.ObjectName(object, new_name)
+
+# BUG: The undo method is only needed because there does not appear
+# to be a way to undo all changes made by a script from within the script.
+# NOTE: If no such method exists, the same would be useful to manage
+# placeholder objects.
+
+# Revert name changes
+def RevertRename(name_map):
+    selected = rs.SelectedObjects(True, False)
+    for object in selected:
+        new_name = rs.ObjectName(object)
+        if new_name in name_map:
+            old_name = name_map[new_name]
+            if old_name is None:
+                old_name = ""  # Restores name is None state
+            rs.ObjectName(object, old_name)
+            del name_map[new_name]
+
 # Default: create a folder next to active doc with the same name!
 def GetExportPath(is_interactive):
     name = sc.doc.ActiveDoc.Name[:-4]  # Known safe
@@ -562,17 +602,23 @@ def RunCommand(is_interactive):
         print(command_preamble + ": no export location -> abort")
         return
     
-    scale = ModelScale()
+    name_map = {}
     try:
         rs.EnableRedraw(False)
+        
         # Select all exportable objects in scene
         rs.ObjectsByType(geometry_type=export_select, select=True, state=0)
+        UniqueRename(name_map)
+        scale = ModelScale()
         ExportSelected(scale, *path_name)
     finally:
         # TODO: Undo all script changes, including selection modifications
         # - failed execution will be cleaned
         # - successful execution will not appear to modify file
+        rs.ObjectsByType(geometry_type=export_select, select=True, state=0)
+        RevertRename(name_map)
         rs.UnselectAllObjects()
+        
         rs.EnableRedraw(True)
     print(command_preamble + ": success")
 
