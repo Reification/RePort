@@ -361,8 +361,8 @@ def LocationMesh(origin, basis):
 
 # Create a placeholder tetrahedron that encodes the block instance transform
 # Units will be in meters to be consistent with import
-def BlockLocation(instance, scale):
-    x = rs.BlockInstanceXform(instance)
+def BlockLocation(object, scale):
+    x = rs.BlockInstanceXform(object)
     p0 = [x.M00, x.M10, x.M20]  # X Basis direction
     p1 = [x.M01, x.M11, x.M21]  # Y Basis direction
     p2 = [x.M02, x.M12, x.M22]  # Z Basis direction
@@ -377,12 +377,12 @@ def BlockLocation(instance, scale):
     
     # Unity import will render names unique with a _N suffix on the N copy
     # so block name is included as a prefix to facilitate matching
-    # in the case that block instances names are not unique
+    # in the case that block objects names are not unique
     block = rs.BlockInstanceName(object)
     block_name = SafeObjectName(block)
-    object_name = rs.ObjectName(instance)
+    object_name = rs.ObjectName(object)
     rs.ObjectName(placeholder, block_name + "=" + object_name)
-    rs.ObjectLayer(placeholder, rs.ObjectLayer(instance))
+    rs.ObjectLayer(placeholder, rs.ObjectLayer(object))
     return placeholder
 
 # PROBLEM: Lights-only export fails!
@@ -535,8 +535,8 @@ def ExportSelected(scale, path, name):
             block_done = False
             try:
                 os.mkdir(block_path)
-            except:
-                # Block has already been exported
+            except OSError:
+                # Directory exists so block has already been exported
                 block_done = True
             if not block_done:
                 # Export block instantiation
@@ -545,6 +545,8 @@ def ExportSelected(scale, path, name):
                 # so that constituent blocks will be exported.
                 instance_parts = rs.ExplodeBlockInstance(instance)
                 rs.SelectObjects(instance_parts)
+                block_name_map = {}
+                UniqueRename(block_name_map)
                 #ShowStep("Block " + block + " export")
                 # IMPORTANT: block subdirectory is prepended to name
                 # so that constituent blocks will be discovered or exported
