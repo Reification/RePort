@@ -11,19 +11,19 @@ namespace Reification {
 	/// The following constituent elements may be present:
 	/// - meshes : mesh objects
 	/// - meshes# : parametric objects exported with detail level #
-	/// - lights : light objects with parameter placeholders
 	/// - places : block instance transform placeholders
+	/// - lights : light objects with parameter placeholders
 	/// The following light types may be present:
-	/// - SunLight : Directional Light
+	/// - DirectionalLight : Directional Light
 	/// - PointLight : Point Light
 	/// - SpotLight : Spot Light
-	/// - QuadLight : Area Light
-	/// - LineLight : imported as ???
-	/// - UnknownLight : imported as disabled PointLight
+	/// - RectangularLight : Rectangle (Area) Light
+	/// - LinearLight : imported as Point Light
+	/// - UnknownLight : imported as Point Light
 	/// </remarks>
 	public static class Rhino {
 		// Derive transform information from a placeholder
-		public static void ImportPlaceholder(MeshFilter meshFilter) {
+		public static void ImportPlaceholder(MeshFilter meshFilter, bool rhinoBasis) {
 			var sharedMesh = meshFilter.sharedMesh;
 			var vertices = sharedMesh?.vertices;
 			if(vertices == null || vertices.Length != 4) {
@@ -31,6 +31,9 @@ namespace Reification {
 				return;
 			}
 			var placeholder = meshFilter.transform;
+			// OBSERVATION: At this stage of the import the layer parent transform is present
+			// but on completion the layer may be absent, although the transform will persist.
+			// NOTE: This also applies to the default import path.
 
 			// Derive Rhino transform block basis in world coordinates
 			var origin = placeholder.TransformPoint(vertices[0]);
@@ -38,15 +41,20 @@ namespace Reification {
 			var basisY = placeholder.TransformPoint(vertices[2]) - origin;
 			var basisZ = placeholder.TransformPoint(vertices[3]) - origin;
 
-			// Convert to unity basis in world coordinates
-			var unityX = new Vector3(-basisX.x, basisX.y, -basisX.z);
-			var unityY = new Vector3(-basisZ.x, basisZ.y, -basisZ.z);
-			var unityZ = new Vector3(-basisY.x, basisY.y, -basisY.z);
+			if(rhinoBasis) {
+				// Mesh basis describes transformation of Rhino basis
+				var unityX = new Vector3(-basisX.x, basisX.y, -basisX.z);
+				var unityY = new Vector3(-basisZ.x, basisZ.y, -basisZ.z);
+				var unityZ = new Vector3(-basisY.x, basisY.y, -basisY.z);
+				basisX = unityX;
+				basisY = unityY;
+				basisZ = unityZ;
+			}
 
 			// TODO: Use SVD to construct transform, which can include shear
 			// TEMP: Assume transform is axial scaling followed by rotation only
 			// NOTE: The origin and bases are simply the columns of an affine (3x4) transform matrix
-			placeholder.localScale = new Vector3(unityX.magnitude, unityY.magnitude, unityZ.magnitude);
+			placeholder.localScale = new Vector3(basisX.magnitude, basisY.magnitude, basisZ.magnitude);
 			placeholder.rotation = Quaternion.LookRotation(basisZ, basisY);
 			placeholder.position = origin;
 
@@ -90,7 +98,7 @@ namespace Reification {
 				break;
 			case "RectangularLight":
 				light.type = LightType.Rectangle;
-				light.areaSize = new Vector2(4f * placeholder.localScale.y, 4f * placeholder.localScale.x);
+				light.areaSize = new Vector2(2f * placeholder.localScale.x, 2f * placeholder.localScale.y);
 				break;
 			default:
 				// NOTE: Disk Lights are not supported in Rhino
@@ -103,8 +111,6 @@ namespace Reification {
 			EP.Destroy(placeholder.gameObject);
 		}
 
-		// TODO: Configure imported light
-		// - Transform and shape set by placeholder
 		// NOTE: AutoStatic or AutoLights will set to bake with hard or soft shadows.
 		// NOTE: AutoLights will create emissive, non-contributing visible light sources.
 
@@ -132,9 +138,11 @@ namespace Reification {
 			}
 
 			public virtual void ImportHierarchy(Transform hierarchy, string element) {
-				if(element == "places" || element == "lights") {
+				var blockBasis = element == "places";
+				var lightBasis = element == "lights";
+				if(blockBasis || lightBasis) {
 					var meshFilterList = hierarchy.GetComponentsInChildren<MeshFilter>();
-					foreach(var meshFilter in meshFilterList) ImportPlaceholder(meshFilter);
+					foreach(var meshFilter in meshFilterList) ImportPlaceholder(meshFilter, blockBasis);
 				}
 			}
 
