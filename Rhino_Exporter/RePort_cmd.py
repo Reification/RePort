@@ -76,6 +76,9 @@ def SafeFileName(name):
     name = name.replace('*', "")
     return name
 
+# TODO: Rhino specific safety
+# https://docs.mcneel.com/rhino/7/help/en-us/information/namingconventions.htm
+
 # Remove unsafe characters from object name
 def SafeObjectName(name):
     if name is None:
@@ -152,7 +155,7 @@ def SaveOptions():
 
 # FBX export options targeting Unity's import process
 # NOTE: Enter exits fbx options
-def fbx_options():
+def FormatOptions():
     # https://docs.mcneel.com/rhino/5/help/en-us/fileio/motionbuilder_fbx_import_export.htm
     options = \
         "ExportFileAs=Version7Binary "\
@@ -173,7 +176,7 @@ def fbx_options():
 # Parametric Surface Meshing Options
 # https://wiki.mcneel.com/rhino/meshsettings
 # https://docs.mcneel.com/rhino/7/help/en-us/popup_moreinformation/polygon_mesh_detailed_options.htm
-def meshing_options(detail):
+def MeshingOptions(detail):
     options = " PolygonDensity=0 "
     if detail == 0:
         options += "DetailedOptions "\
@@ -261,8 +264,8 @@ def ExportModel(path, name, detail=0):
         "-Export " +\
         SaveOptions() +\
         '"' + file_name + '" ' +\
-        fbx_options() + "Enter " +\
-        meshing_options(detail) + "Enter " +\
+        FormatOptions() + "Enter " +\
+        MeshingOptions(detail) + "Enter " +\
         "Enter", 
         True
     )
@@ -276,8 +279,8 @@ def ExportBlock(path, name, detail=0):
         '"' + name + '" ' +\
         SaveOptions() +\
         '"' + file_name + '" ' +\
-        fbx_options() + "Enter " +\
-        meshing_options(detail) + "Enter " +\
+        FormatOptions() + "Enter " +\
+        MeshingOptions(detail) + "Enter " +\
         "Enter Enter",  # NOTE: Second enter exits BlockManager
         True
     )
@@ -349,12 +352,13 @@ def BasisFromDirection(direction):
 
 # Create a location encoding tetrahedron mesh
 def LocationMesh(origin, basis):
+    points = UnitBasis()
     # Convert directions to positions relative to origin
     for b in range(3):
-        basis[b] = rs.VectorAdd(basis[b], origin)
+        points[b] = rs.VectorAdd(basis[b], origin)
     # Construct basis tetrahedron
     mesh = rs.AddMesh(
-        [origin, basis[0], basis[1], basis[2]],
+        [origin, points[0], points[1], points[2]],
         [[0, 2, 1], [0, 3, 2], [0, 1, 3], [1, 2, 3]]
     )
     return mesh
@@ -362,6 +366,9 @@ def LocationMesh(origin, basis):
 # Create a placeholder tetrahedron that encodes the block instance transform
 # Units will be in meters to be consistent with import
 def BlockLocation(object, scale):
+    # WARNING: The basis describes a transformation of the Rhino basis
+    # with respect to the Rhino basis, which might not match the
+    # import environment world basis.
     x = rs.BlockInstanceXform(object)
     p0 = [x.M00, x.M10, x.M20]  # X Basis direction
     p1 = [x.M01, x.M11, x.M21]  # Y Basis direction
@@ -401,6 +408,7 @@ def LightLocation(light, scale):
         return
     
     # Default light transform
+    # NOTE: Point light direction is [0, 0, -1]
     position = rs.LightLocation(light)
     direction = rs.LightDirection(light)
     basis = BasisFromDirection(direction)
@@ -437,7 +445,7 @@ def LightLocation(light, scale):
         # Encode quad dimensions in basis lengths
         basis = [
             widthBasis,
-            -heightBasis,
+            heightBasis,
             direction
         ]
         #corner = position - (widthBasis + heightBasis)
@@ -450,9 +458,8 @@ def LightLocation(light, scale):
         basis[2] = widthBasis
         #clone = rs.AddLinearLight (position - widthBasis, position + widthBasis)
     
-    # Create scaled mesh
-    for b in range(3):
-        basis[b] /= scale
+    # Create placeholder mesh
+    # NOTE: light dimensions are not scaled
     placeholder = LocationMesh(position, basis)
     
     # NOTE: Lights have no corresponding exported block,
