@@ -63,6 +63,11 @@ namespace Reification {
       }
     }
 
+    // QUESTION: Should lower levels of detail have different lightmap settings?
+    // OPTION: Terrain is non-static contributing - only
+    // OPTION: Scale relative to object size, and keep lower levels of detail increased?
+
+    // TODO: Move DisableSceneLights to RePort as default action when there is no handler
     static public void DisableSceneLights(Scene scene) {
       foreach(var sceneObject in scene.GetRootGameObjects()) {
         foreach(var light in sceneObject.GetComponentsInChildren<Light>()) {
