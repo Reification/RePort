@@ -13,38 +13,6 @@ namespace Reification {
 		public const string importPath = "Assets/RePort/";
 
 		/// <summary>
-		/// Element type of exported model file
-		/// </summary>
-		/// <remarks>
-		/// Element names match substrings in file names
-		/// </remarks>
-		public enum Element: int {
-			/// <summary>
-			/// Single file import (default)
-			/// </summary>
-			single = 0,
-
-			/// <summary>
-			/// Mesh surfaces and lights
-			/// </summary>
-			meshes = 1,
-
-			/// <summary>
-			/// Placeholder tetrahedra for prefab instances
-			/// </summary>
-			places = 2,
-
-			/// <summary>
-			/// Level of detail version for parametric surfaces
-			/// </summary>
-			/// <remarks>
-			/// Multiple detail version may be present can be distinguished
-			/// by integers following the element name (e.g. "detail0")
-			/// </remarks>
-			detail = 3
-		}
-
-		/// <summary>
 		/// Parse exported file name of model or model element
 		/// </summary>
 		/// <remarks>
@@ -57,12 +25,12 @@ namespace Reification {
 		/// <param name="path">The path to the model, will be the same for all elements and constituent models</param>
 		/// <param name="name">The model base name, will be the same for all elements</param>
 		/// <param name="element">Optionally empty: The model element identifier, used to configure import</param>
-		/// <param name="exporter">Optionally empty: The model source application, used to reconcile coordinates</param>
+		/// <param name="exporter">Optionally empty: The model source application, identifies configuration delegate</param>
 		/// <param name="type">The model file type</param>
-		static public void ParseModelName(string assetPath, out string path, out string name, out Element element, out string exporter, out string type) {
+		static public void ParseModelName(string assetPath, out string path, out string name, out string element, out string exporter, out string type) {
 			path = "";
 			name = "";
-			element = Element.single;
+			element = "";
 			exporter = "";
 			type = "";
 
@@ -86,13 +54,11 @@ namespace Reification {
 				}
 			}
 			if(nameIndex > 0 && exporter.Length > 0) {
-				if(nameParts[nameIndex].StartsWith(Element.meshes.ToString())) element = Element.meshes;
-				if(nameParts[nameIndex].StartsWith(Element.places.ToString())) element = Element.places;
-				if(nameParts[nameIndex].StartsWith(Element.detail.ToString())) element = Element.detail;
-				if(element != Element.single) --nameIndex;
+				element = nameParts[nameIndex];
+				--nameIndex;
 			}
 			name = nameParts[0];
-			for(int p = 1; p <= nameIndex; ++p) name += '/' + nameParts[p];
+			for(var n = 1; n <= nameIndex; ++n) name += "." + nameParts[n];
 		}
 
 		/// <summary>
@@ -104,9 +70,13 @@ namespace Reification {
 		/// </remarks>
 		public interface Importer {
 			/// <summary>
-			/// Filename suffix identifying exporter application
+			/// Model importer processing can be configured
 			/// </summary>
-			string exporter { get; }
+			/// <remarks>
+			/// This can be used to control mesh optimization,
+			/// and lightmap UV generation.
+			/// </remarks>
+			void ConfigureImport(ModelImporter importer, string element);
 
 			/// <summary>
 			/// Transforms and meshes can be modified during this call
@@ -115,7 +85,7 @@ namespace Reification {
 			/// Called from OnPostprocessMeshHierarchy, which is called once
 			/// for each direct child of the model root transform.
 			/// </remarks>
-			void ImportHierarchy(Transform hierarchy, Element element);
+			void ImportHierarchy(Transform hierarchy, string element);
 
 			/// <summary>
 			/// Material properties can be modified during this call
@@ -123,8 +93,7 @@ namespace Reification {
 			/// <remarks>
 			/// Called from OnPostprocessMaterial so textures are not yet associated.
 			/// </remarks>
-			/// <param name="material">Model material being imported</param>
-			void ImportMaterial(Material material, Element element);
+			void ImportMaterial(Material material, string element);
 
 			/// <summary>
 			/// Model components can be modified during this call
@@ -133,9 +102,7 @@ namespace Reification {
 			/// Called from OnPostprocessModel so 
 			/// Assets created during this call cannot be referenced.
 			/// </remarks>
-			/// <param name="model"></param>
-			/// <param name="element"></param>
-			void ImportModel(GameObject model, Element element);
+			void ImportModel(GameObject model, string element);
 		}
 
 		static Dictionary<string, Importer> importerDict = new Dictionary<string, Importer>();
@@ -143,9 +110,9 @@ namespace Reification {
 		/// <summary>
 		/// Register import post-processing
 		/// </summary>
-		static public void RegisterImporter(Importer importer) {
-			if(importerDict.ContainsKey(importer.exporter)) importerDict[importer.exporter] = importer;
-			else importerDict.Add(importer.exporter, importer);
+		static public void RegisterImporter(string exporter, Importer importer) {
+			if(importerDict.ContainsKey(exporter)) importerDict[exporter] = importer;
+			else importerDict.Add(exporter, importer);
 			// QUESTION: How can conflicts be identified when editing importers?
 		}
 
@@ -175,14 +142,11 @@ namespace Reification {
 			var modelImporter = assetImporter as ModelImporter;
 			if(modelImporter.importSettingsMissing) {
 				// Configure import
-				ParseModelName(assetPath, out _, out _, out var element, out _, out _);
-				switch(element) {
-				case Element.places:
-					PlacesImporter(modelImporter);
-					break;
-				default:
+				ParseModelName(assetPath, out _, out _, out var element, out var exporter, out _);
+				if(importerDict.ContainsKey(exporter)) {
+					importerDict[exporter].ConfigureImport(modelImporter, element);
+				} else {
 					MeshesImporter(modelImporter);
-					break;
 				}
 			} else {
 				// Configure reimport
@@ -234,13 +198,17 @@ namespace Reification {
 		/// <summary>
 		/// Import configuration to enable lightmapping
 		/// </summary>
+		/// <remarks>
+		/// Lights are not imported by default since their units
+		/// may be physics instead of rendered.
+		/// </remarks>
 		static public void MeshesImporter(ModelImporter modelImporter) {
 			modelImporter.generateSecondaryUV = true;
 			// CRITICAL: Generation after meshes are extracted is not possible
 			// WARNING: Lightmap UV generation is very slow
 			// https://docs.unity3d.com/Manual/LightingGiUvs-GeneratingLightmappingUVs.html
 
-			modelImporter.importLights = true; // Requires conversion from physical units
+			modelImporter.importLights = false;
 			modelImporter.importCameras = false;
 			modelImporter.importBlendShapes = false;
 			modelImporter.importVisibility = false;
@@ -336,11 +304,9 @@ namespace Reification {
 
 			foreach(var child in model.Children(true)) child.name = SafeAssetName(child.name);
 
-			// Strip empty GameObjects from hierarchy
-			RemoveEmpty(model);
-
 			ParseModelName(assetPath, out _, out _, out var element, out var source, out _);
 			if(importerDict.ContainsKey(source)) importerDict[source].ImportModel(model, element);
+			else RemoveEmpty(model);
 		}
 
 		/// <summary>
@@ -494,7 +460,7 @@ namespace Reification {
 						completeModels.Add(prefab);
 					} else {
 						ParseModelName(assetPath, out _, out _, out var element, out _, out _);
-						if(element != Element.single) {
+						if(element.Length > 0) {
 							if(!partialModels.ContainsKey(mergePath)) partialModels.Add(mergePath, new List<GameObject>());
 							partialModels[mergePath].Add(prefab);
 						} else {

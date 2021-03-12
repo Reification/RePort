@@ -41,7 +41,6 @@ namespace Reification {
         Lightmapping.giWorkflowMode = Lightmapping.GIWorkflowMode.OnDemand;
         // IMPORTANT: Bake() should not be called when giWorkflowMode == Iterative
 
-        DisableSceneLights(scene); // TEMP: Imported lights are not scaled to render
         ConfigureLightmaps(scene);
 
         // Unity 2019.4
@@ -63,14 +62,9 @@ namespace Reification {
       }
     }
 
-    static public void DisableSceneLights(Scene scene) {
-      foreach(var sceneObject in scene.GetRootGameObjects()) {
-        foreach(var light in sceneObject.GetComponentsInChildren<Light>()) {
-          if(light == RenderSettings.sun) continue;
-          light.enabled = false;
-        }
-      }
-    }
+    // QUESTION: Should lower levels of detail have different lightmap settings?
+    // OPTION: Terrain scale 0 - see hover pop-up, or is non-static with mesh marked as contributing - only
+    // OPTION: Scale relative to object size, and keep lower levels of detail increased?
 
     // Expose settings in the Lighting panel to scripted modification 
     static public SerializedObject GetLightmapSettings(Scene scene) {
