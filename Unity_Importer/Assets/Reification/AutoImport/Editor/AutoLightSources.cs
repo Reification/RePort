@@ -31,12 +31,11 @@ namespace Reification {
 			var lightList = gameObject.GetComponentsInChildren<Light>();
 			foreach(var light in lightList) CreateSource(light);
 		}
-
-		static string LightSourceName(Light light) => light.name + "_Source";
+		static string ConfigureName(string name) => name + "_Source";
 
 		static public void CreateSource(Light light) {
 			// Check if source already exists
-			var sourceName = LightSourceName(light);
+			var sourceName = ConfigureName(light.name);
 			var lighSourceList = light.transform.NameFindInChildren(sourceName);
 			if(lighSourceList.Length > 0) return;
 			// OPTION: If sources are found, reconfigure or destroy and recreate
@@ -108,7 +107,7 @@ namespace Reification {
 			source.SetActive(light.enabled);
 			source.layer = light.gameObject.layer;
 			// Make source constitent with search
-			source.name = LightSourceName(light);
+			source.name = ConfigureName(light.name);
 			EP.SetParent(source.transform, light.transform);
 			
 			// Position source around light

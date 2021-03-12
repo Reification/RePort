@@ -116,7 +116,7 @@ namespace Reification {
 		/// WARNING: Collisions are still possible dues to the '=' removal. This can be prevented by
 		/// ensuring that this character does not appear in the object or prefab name parts.
 		/// </remarks>
-		static public string ConfigureName(GameObject gameObject) => gameObject.name.Trim('=').Replace('=', '-');
+		static public string ConfigureName(string name) => name.Trim('=').Replace('=', '-');
 
 		// Model export generates meshes in world coordinates
 		// In order to retain information, each prefab is replaced with a transformed tetrahedron
@@ -137,7 +137,7 @@ namespace Reification {
 				if(name_parts.Length == 1) continue;
 				if(prefabs.TryGetValue(name_parts[0], out var cached)) {
 					// When reimporting retain previous replacement if present
-					string replaceName = ConfigureName(child);
+					string replaceName = ConfigureName(child.name);
 					var replaceList = child.transform.parent.NameFindInChildren(replaceName);
 					// ASSUME: Each placeholder yields a unique configured name
 					if(replaceList.Length == 0) {
