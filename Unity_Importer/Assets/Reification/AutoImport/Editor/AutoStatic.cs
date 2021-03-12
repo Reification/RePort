@@ -6,25 +6,22 @@ using UnityEditor;
 
 namespace Reification {
 	/// <summary>
-	/// Sets static flags for objects recursively
+	/// Configure all GameObjects and Components in hierarchy to be static
 	/// </summary>
 	/// <remarks>
-	/// When an object has an associated RigidBody
-	/// the object flags will be set to nothing (non-static).
-	/// Only Everything and Nothing static flags
-	/// will be modified.
+	/// Components that could make object dynamic will be removed.
 	/// </remarks>
 	public class AutoStatic {
 		const string menuItemName = "Reification/Auto Static";
 		const int menuItemPriority = 24;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
-		private static bool Validate() {
+		static bool Validate() {
 			return Selection.gameObjects.Length > 0;
 		}
 
 		[MenuItem(menuItemName, priority = menuItemPriority)]
-		private static void Execute() {
+		static void Execute() {
 			Undo.IncrementCurrentGroup();
 			Undo.SetCurrentGroupName("Auto Static");
 
@@ -32,94 +29,71 @@ namespace Reification {
 			foreach(var selection in selectionList) ApplyTo(selection);
 		}
 
-		public static void ApplyTo(GameObject gameObject, bool forceNoMotion, float minBakedArea) {
-			recurseSetStatic(gameObject, false, forceNoMotion, minBakedArea);
-		}
-
-		// Object does not contribute to motion buffer
-		public static bool _forceNoMotion = false; //true;
-																							 // Object area must exceed this in some view to be include in lightmap
-		public static float _minBakedArea = 0f; //4f;
-
-		public static void ApplyTo(GameObject gameObject) {
-			ApplyTo(gameObject, _forceNoMotion, _minBakedArea);
-		}
-
-		private const StaticEditorFlags nothing = (StaticEditorFlags)0;
-		private const StaticEditorFlags everything = (StaticEditorFlags)~0;
-
-		// FIXME: Stop recursion at prefabs - those will be handled separately
-		// TODO: Allow camera motion vectors
-		// TODO: Configure for occlusion
-		// TODO: Configure nominal scale in lightmap
-
-		private static void recurseSetStatic(GameObject gameObject, bool hasPhysics, bool forceNoMotion, float minBakedArea) {
+		/// <summary>
+		/// Recursively configure all objects and components in hierarchy to be static
+		/// </summary>
+		/// <param name="gameObject">Root of hierarchy to be converted to static configuration</param>
+		/// <param name="prefabs">Apply static conversion overrides to prefabs in hierarchy</param>
+		static public void ApplyTo(GameObject gameObject, bool prefabs = false) {
 			using(var editScope = new EP.EditGameObject(gameObject)) {
 				var editObject = editScope.editObject;
 
-				hasPhysics |= editObject.GetComponent<Rigidbody>() != null;
+				// Set static configurations
+				GameObjectSetStatic(editObject);
+				foreach(var renderer in editObject.GetComponents<Renderer>()) RendererSetStatic(renderer);
+				foreach(var collider in editObject.GetComponents<Collider>()) ColliderSetStatic(collider);
+				foreach(var light in editObject.GetComponents<Light>()) LightSetStatic(light);
 
-				// Do not modify object if already configured
-				var flags = GameObjectUtility.GetStaticEditorFlags(editObject);
-				var modify = flags == nothing || flags == everything;
+				// Remove dynamic components
+				foreach(var monoBehavior in editObject.GetComponents<MonoBehaviour>()) EP.Destroy(monoBehavior);
+				foreach(var physics in editObject.GetComponents<Rigidbody>()) EP.Destroy(physics);
 
-				flags = everything;
-				if(hasPhysics) {
-					if(modify) GameObjectUtility.SetStaticEditorFlags(editObject, nothing);
+				foreach(var child in editObject.Children()) {
+					// Limit prefab recursion
+					var prefabAssetType = PrefabUtility.GetPrefabAssetType(child);
+					if(prefabAssetType == PrefabAssetType.MissingAsset) continue;
+					if(prefabAssetType != PrefabAssetType.NotAPrefab && !prefabs) continue;
 
-					// Set motion vectors
-					var meshRenderer = editObject.GetComponent<MeshRenderer>();
-					if(meshRenderer) {
-						Undo.RecordObject(meshRenderer, "Auto Static");
-						meshRenderer.motionVectorGenerationMode = forceNoMotion ? MotionVectorGenerationMode.ForceNoMotion : MotionVectorGenerationMode.Object;
-					}
-
-					foreach(var child in editObject.Children()) recurseSetStatic(child, hasPhysics, forceNoMotion, minBakedArea);
-					return;
+					ApplyTo(child);
 				}
-
-				// Check for mesh
-				var meshFilter = editObject.GetComponent<MeshFilter>();
-				var sharedMesh = meshFilter ? meshFilter.sharedMesh : null;
-				if(!sharedMesh) {
-					if(modify) GameObjectUtility.SetStaticEditorFlags(editObject, everything);
-					foreach(var child in editObject.Children()) recurseSetStatic(child, hasPhysics, forceNoMotion, minBakedArea);
-					return;
-				}
-
-				// Include in lightmap according to maximum visible area
-				// IMPORTANT: Imported meshes preserve original units, with object local scale applied in transform.
-				// PROBLEM: A thin diagonal cylinder will have large bounding boxes
-				// but a small maximum area.
-				// NOTE: Estimated XSection area versus bounds might be a better distinguisher for occlusion
-				// TEMP: ASSUME parents are NOT scaled
-				var bounds = sharedMesh.bounds.size;
-				for(int i = 0; i < 3; ++i) bounds[i] *= editObject.transform.localScale[i];
-				var hasLightmapArea =
-					minBakedArea <= bounds.x * bounds.y ||
-					minBakedArea <= bounds.x * bounds.z ||
-					minBakedArea <= bounds.y * bounds.z;
-				if(!hasLightmapArea) {
-					flags &= ~(
-						StaticEditorFlags.ContributeGI |
-						StaticEditorFlags.ReflectionProbeStatic |
-						StaticEditorFlags.OccluderStatic
-					);
-				}
-
-				// TODO: Check transparent materials
-				// TODO: Check for reflective materials
-				{
-					var meshRenderer = editObject.GetComponent<MeshRenderer>();
-					if(meshRenderer) {
-						Undo.RecordObject(meshRenderer, "Auto Static");
-						meshRenderer.motionVectorGenerationMode = forceNoMotion ? MotionVectorGenerationMode.ForceNoMotion : MotionVectorGenerationMode.Camera;
-					}
-				}
-
-				if(modify) GameObjectUtility.SetStaticEditorFlags(editObject.gameObject, flags);
-				foreach(var child in editObject.Children()) recurseSetStatic(child, hasPhysics, forceNoMotion, minBakedArea);
 			}
+		}
+
+		static public void GameObjectSetStatic(GameObject gameObject) {
+			Undo.RecordObject(gameObject, "GameObject Set Static");
+			GameObjectUtility.SetStaticEditorFlags(gameObject, (StaticEditorFlags)~0);
+		}
+
+		static public void RendererSetStatic(Renderer renderer) {
+			Undo.RecordObject(renderer, "Renderer Set Static");
+			renderer.receiveShadows = true;
+			renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+			renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
+			renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.BlendProbes;
+			renderer.allowOcclusionWhenDynamic = false;
+			renderer.motionVectorGenerationMode = MotionVectorGenerationMode.Camera;
+
+			var meshRenderer = renderer as MeshRenderer;
+			if(meshRenderer) {
+				meshRenderer.receiveGI = ReceiveGI.Lightmaps;
+				meshRenderer.scaleInLightmap = 1f;
+				// OPTION: Look in parents for LODGroup managing this renderer
+				// and renconfigure to use probes if lower detail, or scale up
+			}
+		}
+
+		static public void ColliderSetStatic(Collider collider) {
+			Undo.RecordObject(collider, "Collider Set Static");
+			var meshCollider = collider as MeshCollider;
+			if(meshCollider) {
+				meshCollider.cookingOptions = (MeshColliderCookingOptions)~0;
+			}
+		}
+
+		static public void LightSetStatic(Light light) {
+			Undo.RecordObject(light, "Light Set Static");
+			light.lightmapBakeType = LightmapBakeType.Baked;
+			light.shadows = LightShadows.Soft;
 		}
 	}
 }
