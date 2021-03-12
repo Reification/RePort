@@ -96,10 +96,6 @@ namespace Reification {
 
 		static public GameObject CreateRectangleSource(Light light) {
 			var source = CreatePrimitiveSource(light, PrimitiveType.Cube);
-
-			// TEMP
-			Debug.Log($"Light {light.type} source {source.Path()} -> {source.GetComponent<MeshFilter>().sharedMesh.name}");
-
 			source.transform.localScale = new Vector3(light.areaSize.x, light.areaSize.y, areaThickness);
 			return source;
 		}
@@ -170,18 +166,21 @@ namespace Reification {
 			material.enableInstancing = !light.gameObject.isStatic;
 
 			// Light already exists, so emission should not contribute
+			// Emission overrides environmental visuals so there is no need to receive
 			material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
 
-			// Emission will override environmental visuals
+			// Assume emission will override environmental visuals
 			material.color = light.color;
-			material.SetFloat("_SpecularHighlights", 0f);
-			material.SetFloat("_GlossyReflections", 0f);
+			material.SetFloat("_Metallic", 0f);
+			material.SetFloat("_Glossiness", 0f); // Smoothness
+			material.SetFloat("_SpecularHighlights", 0f); // Specular Highlights
+			material.SetFloat("_GlossyReflections", 0f); // Reflections
 
-			// Create emissive material instance
+			// Match emission to light
 			material.EnableKeyword("_EMISSION");
 			material.SetVector("_EmissionColor", light.color * light.intensity);
 
-			// Use albedo as emission texture
+			// Use albedo as emission texture if it exists
 			var texture = material.GetTexture("_MainTex");
 			if(texture) material.SetTexture("_EmissionMap", texture);
 		}

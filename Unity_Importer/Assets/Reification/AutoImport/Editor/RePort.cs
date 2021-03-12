@@ -198,13 +198,17 @@ namespace Reification {
 		/// <summary>
 		/// Import configuration to enable lightmapping
 		/// </summary>
+		/// <remarks>
+		/// Lights are not imported by default since their units
+		/// may be physics instead of rendered.
+		/// </remarks>
 		static public void MeshesImporter(ModelImporter modelImporter) {
 			modelImporter.generateSecondaryUV = true;
 			// CRITICAL: Generation after meshes are extracted is not possible
 			// WARNING: Lightmap UV generation is very slow
 			// https://docs.unity3d.com/Manual/LightingGiUvs-GeneratingLightmappingUVs.html
 
-			modelImporter.importLights = true;
+			modelImporter.importLights = false;
 			modelImporter.importCameras = false;
 			modelImporter.importBlendShapes = false;
 			modelImporter.importVisibility = false;
