@@ -70,7 +70,7 @@ namespace Reification {
 			renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
 			renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
 			renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.BlendProbes;
-			renderer.allowOcclusionWhenDynamic = false;
+			renderer.allowOcclusionWhenDynamic = true;
 			renderer.motionVectorGenerationMode = MotionVectorGenerationMode.Camera;
 
 			var meshRenderer = renderer as MeshRenderer;
@@ -79,6 +79,25 @@ namespace Reification {
 				meshRenderer.scaleInLightmap = 1f;
 				// OPTION: Look in parents for LODGroup managing this renderer
 				// and renconfigure to use probes if lower detail, or scale up
+			}
+
+			bool hasEmission = false;
+			foreach(var material in renderer.sharedMaterials) {
+				// Instancing pertains only to dynamic objects
+				material.enableInstancing = false;
+
+				if(material.IsKeywordEnabled("_EMISSION")) {
+					// Ensure that emissive light will be included in bake
+					material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.BakedEmissive;
+					hasEmission = true;
+				} else {
+					material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.EmissiveIsBlack;
+				}
+			}
+			if(hasEmission) {
+				var serializedObject = new SerializedObject(meshRenderer);
+				serializedObject.FindProperty("m_ImportantGI").boolValue = true; // Editor: Prioritize Illumination = on
+				serializedObject.ApplyModifiedProperties();
 			}
 		}
 
