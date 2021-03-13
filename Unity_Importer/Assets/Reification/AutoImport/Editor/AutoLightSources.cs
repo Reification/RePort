@@ -27,18 +27,26 @@ namespace Reification {
 		}
 
 		static public void ApplyTo(GameObject gameObject) {
-			// Find all lights
-			var lightList = gameObject.GetComponentsInChildren<Light>();
-			foreach(var light in lightList) CreateSource(light);
+			// NOTE: Multiple light components are disallowed
+			var light = gameObject.GetComponent<Light>();
+			if(light) {
+				CreateSource(light);
+				// NOTE: Create source will remove all children of light
+				return;
+			}
+
+			foreach(var child in gameObject.Children()) {
+				var prefabType = PrefabUtility.GetPrefabAssetType(child);
+				if(prefabType != PrefabAssetType.NotAPrefab) continue;
+				// Prefabs must be configured separately
+				ApplyTo(child);
+			}
 		}
 		static string ConfigureName(string name) => name + "_Source";
 
 		static public void CreateSource(Light light) {
-			// Check if source already exists
-			var sourceName = ConfigureName(light.name);
-			var lighSourceList = light.transform.NameFindInChildren(sourceName);
-			if(lighSourceList.Length > 0) return;
-			// OPTION: If sources are found, reconfigure or destroy and recreate
+			// ASSUME: All children of light are sources
+			foreach(var source in light.gameObject.Children()) EP.Destroy(source);
 
 			// OPTION: Move light forward to prevent Z fighting when coplanar
 
@@ -102,6 +110,9 @@ namespace Reification {
 		// PROBLEM: Light source meshes are generally small and could use a lower level of detail
 		// in most cases. Prefabs with custom meshes could address this for sphere and cylinder
 
+		// OPTION: Provide a component to monitor the light intensity and update the emissive material
+		// accordingly - both static and dynamic. This could also tag actual child light sources.
+
 		static public GameObject CreatePrimitiveSource(Light light, PrimitiveType primitiveType) {
 			var source = GameObject.CreatePrimitive(primitiveType);
 			source.SetActive(light.enabled);
@@ -157,6 +168,8 @@ namespace Reification {
 			meshRenderer.sharedMaterial = material;
 		}
 
+		const float bloomZero = 1f;
+
 		/// <summary>
 		/// Configure material emission to match light emission
 		/// </summary>
@@ -177,7 +190,7 @@ namespace Reification {
 
 			// Match emission to light
 			material.EnableKeyword("_EMISSION");
-			material.SetVector("_EmissionColor", light.color * light.intensity);
+			material.SetVector("_EmissionColor", light.color * (bloomZero + light.intensity));
 
 			// Use albedo as emission texture if it exists
 			var texture = material.GetTexture("_MainTex");
