@@ -1,5 +1,6 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿// Copyright 2021 Reification Incorporated
+// Licensed under Apache 2.0. All Rights reserved.
+
 using UnityEngine;
 using UnityEditor;
 
