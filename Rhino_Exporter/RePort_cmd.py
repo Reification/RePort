@@ -1,4 +1,5 @@
-# Copyright Reification Incorporated 2020
+# Copyright 2021 Reification Incorporated
+# Licensed under Apache 2.0. All Rights reserved.
 
 from Rhino import *
 import rhinoscriptsyntax as rs
