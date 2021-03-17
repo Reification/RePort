@@ -1,18 +1,22 @@
-# Copyright Reification Incorporated 2020
+# Copyright 2021 Reification Incorporated
+# Licensed under Apache 2.0. All Rights reserved.
 
 from Rhino import *
 import rhinoscriptsyntax as rs
 import scriptcontext as sc
 import os
 import shutil
-
 import __plugin__
 
-__commandname__ = "RePort"
+__commandname__ = __plugin__.title
+
+# PROBLEM: The IronPython plugin for Rhino (versions 5, 6, 7) uses the first installed command version.
+# SOLUTION: Make the version in __plugin__.py invariant and declare code version here.
+# NOTE: The version declared in __plugin__.py must be non-zero
+# https://discourse.mcneel.com/t/updating-python-plugin-version/119362
+RePort_version = "0.3.0.0" #__plugin__.version
 
 Rhino_version = RhinoApp.Version.Major
-
-RePort_version = __plugin__.version
 
 # https://developer.rhino3d.com/api/RhinoCommon/html/T_Rhino_DocObjects_ObjectType.htm
 # WARNING: Incomplete documentation for Rhino7 in RhinoScript reference:
