@@ -17,8 +17,8 @@ namespace Reification {
 			foreach(var gameObject in Selection.gameObjects) {
 				var assetType = PrefabUtility.GetPrefabAssetType(gameObject);
 				if(
-					assetType == PrefabAssetType.Model ||
-					assetType == PrefabAssetType.NotAPrefab
+					assetType == PrefabAssetType.NotAPrefab ||
+					assetType == PrefabAssetType.MissingAsset
 				) return false;
 			}
 			return true;
