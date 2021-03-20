@@ -81,8 +81,8 @@ namespace Reification {
     }
 
     static public void SetResolution(SerializedObject lightmapSettings) {
-      lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue = 2f; // Inirect Resolution
-      lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue = 20f; // Direct Resolution
+      lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue = 20f; // Direct Resolution
+      lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue = 2f; // Indirect Resolution
       lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Padding").intValue = 2;
       lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AtlasSize").intValue = Mathf.NextPowerOfTwo(Mathf.Clamp(1024, 32, 4096));
 
