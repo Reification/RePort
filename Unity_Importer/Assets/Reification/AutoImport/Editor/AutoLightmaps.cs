@@ -10,7 +10,7 @@ using UnityEditor.SceneManagement;
 namespace Reification {
   public class AutoLightmaps {
     const string menuItemName = "Reification/Fast Lightmaps";
-    const int menuItemPriority = 31;
+    const int menuItemPriority = 32;
 
     [MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
     static private bool Validate() {
