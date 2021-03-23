@@ -33,53 +33,56 @@ namespace Reification {
         foreach(var sceneSetup in sceneSetupList) scenePathList.Add(sceneSetup.path);
       }
 
+      EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
       ApplyTo(scenePathList.ToArray());
     }
 
+    /// <summary>
+    /// Immediate combined bake of scenes
+    /// </summary>
+    /// <remarks>
+    /// Baked data will be in a folder named for and adjacent to the first listed scene.
+    /// 
+    /// Baked lighting, including bounced lighting, will be referenced between scenes
+    /// Light probe data is not partitioned between scenes:
+    /// https://docs.unity3d.com/2019.4/Documentation/ScriptReference/Lightmapping.BakeMultipleScenes.html
+    /// 
+    /// WARNING: Any unsaved changes will be lost when this is called. To prevent this, first call:
+    ///     EditorSceneManager.SaveOpenScenes();
+    /// 
+    /// PROBLEM: Unity 2019.4 - If AssetDatabase.StartAssetEditing() has been called or importing is active,
+    /// lightmap generation will fail and loop with error:
+    /// "Cannot call SetTextureImporterSettings(paths[], settings[]) after StartAssetImporting()"
+    /// Which is accompanied by errors:
+    /// "Could not access TextureImporter at path"
+    /// "Could not read textures from Assets"
+    /// "Integrate failed on Write Lighting Data job"
+    /// PROBLEM: Calling AssetDatabase.StopAssetEditing() during import puts editor into hung state.
+    /// SOLUTION: Enqueue scenes to be baked and wait for importing to complete.
+    /// </remarks>
     static public void ApplyTo(params string[] scenePathList) {
       if(scenePathList.Length == 0) return;
 
-
-      // Open and apply a uniform configuration to each scene
-      // QUESTION: Is it necessary to open each scene in single mode - maybe active scene could be changed instead?
-      EditorSceneManager.SaveOpenScenes();
       var sceneSetup = EditorSceneManager.GetSceneManagerSetup();
+      var giWorkflowMode = Lightmapping.giWorkflowMode;
       try {
-        foreach(var scenePath in scenePathList) {
-          var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+        // Open all of the scenes
+        var sceneList = new Scene[scenePathList.Length];
+        for(var s = 0; s < scenePathList.Length; ++s) sceneList[s] = EditorSceneManager.OpenScene(scenePathList[s], s == 0 ? OpenSceneMode.Single : OpenSceneMode.Additive);
+
+        // Configure each scene identically
+        foreach(var scene in sceneList) {
           EditorSceneManager.SetActiveScene(scene);
           ConfigureLightmaps(scene);
           EditorSceneManager.SaveScene(scene);
         }
-      } finally {
-        // IMPORTANT: RestoreSceneManagerSetup must be called before Bake() or BakeMultipleScenes()
-        // since it will halt that process.
-        EditorSceneManager.RestoreSceneManagerSetup(sceneSetup);
-      }
 
-      // Unity 2019.4
-      // PROBLEM: If AssetDatabase.StartAssetEditing() has been called lightmap generation will fail and loop with error:
-      // "Cannot call SetTextureImporterSettings(paths[], settings[]) after StartAssetImporting()"
-      // Which is accompanied by errors:
-      // "Could not access TextureImporter at path"
-      // "Could not read textures from Assets"
-      // "Integrate failed on Write Lighting Data job"
-      // PROBLEM: Calling AssetDatabase.StopAssetEditing() during import puts editor into hung state.
-      // SOLUTION: Enqueue scenes to be baked and wait for importing to complete.
-
-      // PROBLEM: BakeMultipleScenes is asynchronous and can be interrupted
-      // SOLUTION: Open all scenes and call Bake()
-      // NOTE: Baked lighting, including RTGI, will be referenced between scenes
-      // WARNING: Light probe data is not partitioned between scenes
-      // https://docs.unity3d.com/2019.4/Documentation/ScriptReference/Lightmapping.BakeMultipleScenes.html
-
-      // IMPORTANT: Bake() should not be called when giWorkflowMode == Iterative
-      var giWorkflowMode = Lightmapping.giWorkflowMode;
-      try {
+        // PROBLEM: BakeMultipleScenes is asynchronous and can be interrupted
+        // SOLUTION: Open all scenes and call Bake()
+        // IMPORTANT: Bake() requires that Lightmapping.giWorkflowMode == Lightmapping.GIWorkflowMode.OnDemand
+        // https://docs.unity3d.com/ScriptReference/Lightmapping.Bake.html
         Lightmapping.giWorkflowMode = Lightmapping.GIWorkflowMode.OnDemand;
-
-        // IMPORTANT: Lightmapping.Bake() should be called when only scenes contributing to bake are open
-        for(var s = 0; s < scenePathList.Length; ++s) EditorSceneManager.OpenScene(scenePathList[s], s == 0 ? OpenSceneMode.Single : OpenSceneMode.Additive);
+        EditorSceneManager.SetActiveScene(sceneList[0]);
         Lightmapping.Bake();
         EditorSceneManager.SaveOpenScenes();
       } finally {
@@ -112,7 +115,6 @@ namespace Reification {
       lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue = 2f; // Indirect Resolution
       lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Padding").intValue = 2;
       lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AtlasSize").intValue = Mathf.NextPowerOfTwo(Mathf.Clamp(1024, 32, 4096));
-
     }
 
     static public void SetAmbientOcclusion(SerializedObject lightmapSettings) {
@@ -146,7 +148,7 @@ namespace Reification {
 
     public const string fastParametersPath = "Assets/Reification/AutoImport/Settings/FastLightmaps.giparams";
 
-    // TODO: Provide a struct for lightmap parameters, with static fast / best default values.
+    // TODO: Provide a struct for lightmap parameters, with static fast / good default values.
 
     // Configure scene for fast lightmap baking
     static public void ConfigureLightmaps(Scene scene) {
