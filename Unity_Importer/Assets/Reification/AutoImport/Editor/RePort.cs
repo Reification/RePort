@@ -589,7 +589,7 @@ namespace Reification {
 				modelPath = modelPath.Substring(0, modelPath.Length - ".prefab".Length);
 				var scenePath = AutoScene.ApplyTo(modelPath, model);
 				// TODO: Hook to add configurable prefabs...
-				AutoLightmaps.ApplyTo(scenePath);
+				AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
 				// TODO: Hook to bake Reflections, Acoustics...
 				//Debug.Log($"Created scene : {scenePath}");
 				configuredScenes.Add(scenePath);
