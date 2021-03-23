@@ -10,7 +10,7 @@ using UnityEditor.SceneManagement;
 namespace Reification {
 	public class AutoLightSources {
 		const string menuItemName = "Reification/Auto Light Sources";
-		const int menuItemPriority = 31;
+		const int menuItemPriority = 30;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
@@ -26,7 +26,10 @@ namespace Reification {
 			foreach(var selection in selectionList) ApplyTo(selection);
 		}
 
-		static public void ApplyTo(GameObject gameObject) {
+		static public void ApplyTo(GameObject gameObject, bool prefabs = false) {
+			// NOTE: Light sources can be created as prefab overrides,
+			// so the prefab does NOT need to be opened for editing
+
 			// NOTE: Multiple light components are disallowed
 			var light = gameObject.GetComponent<Light>();
 			if(light) {
@@ -36,9 +39,11 @@ namespace Reification {
 			}
 
 			foreach(var child in gameObject.Children()) {
-				var prefabType = PrefabUtility.GetPrefabAssetType(child);
-				if(prefabType != PrefabAssetType.NotAPrefab) continue;
-				// Prefabs must be configured separately
+				if(
+					!prefabs &&
+					PrefabAssetType.NotAPrefab != PrefabUtility.GetPrefabAssetType(child) &&
+					child == PrefabUtility.GetNearestPrefabInstanceRoot(child)
+				) continue;
 				ApplyTo(child);
 			}
 		}

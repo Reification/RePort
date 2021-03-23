@@ -19,7 +19,7 @@ namespace Reification {
 	/// </remarks>
 	public class AutoLightProbes {
 		const string menuItemName = "Reification/Auto Light Probes";
-		const int menuItemPriority = 30;
+		const int menuItemPriority = 31;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
