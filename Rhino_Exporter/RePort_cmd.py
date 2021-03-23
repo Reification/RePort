@@ -14,7 +14,7 @@ __commandname__ = __plugin__.title
 # SOLUTION: Make the version in __plugin__.py invariant and declare code version here.
 # NOTE: The version declared in __plugin__.py must be non-zero
 # https://discourse.mcneel.com/t/updating-python-plugin-version/119362
-RePort_version = "0.3.0.0" #__plugin__.version
+RePort_version = "0.3.0" #__plugin__.version
 
 Rhino_version = RhinoApp.Version.Major
 
@@ -610,8 +610,6 @@ def GetExportPath(is_interactive):
 
 def RunCommand(is_interactive):
     command_preamble = __commandname__ + " v" + RePort_version
-    if is_interactive:
-        print(command_preamble)
     
     if not (Rhino_version == 7 or Rhino_version == 6 or Rhino_version == 5):
         print(command_preamble + ": does not support Rhino Rhino_version " + str(Rhino_version) + " -> abort")
