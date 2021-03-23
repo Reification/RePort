@@ -13,7 +13,7 @@ public class RePort_Package {
 	const string menuItemName = "Products/RePort Package";
 	const int menuItemPriority = 0;
 
-	public const string packageName = "Reification_Unity_Importer";
+	public const string packageName = "RePort_for_Unity";
 
 	public static HashSet<string> assetPaths { get; private set; } = new HashSet<string>{
 			"Assets/Reification/AutoImport/Editor/RePort.cs",
