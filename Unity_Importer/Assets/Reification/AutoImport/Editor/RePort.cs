@@ -1,6 +1,7 @@
 ﻿// Copyright 2021 Reification Incorporated
 // Licensed under Apache 2.0. All Rights reserved.
 
+using System;
 using System.IO;
 using System.Collections.Generic;
 using UnityEngine;
@@ -9,6 +10,8 @@ using UnityEditor.SceneManagement;
 
 namespace Reification {
 	public class RePort : AssetPostprocessor {
+		static public Version version { get; private set; } = new Version(0, 3, 0);
+
 		// This preprocessor pertains only to models in this path
 		public const string importPath = "Assets/RePort/";
 
@@ -483,6 +486,9 @@ namespace Reification {
 
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
+
+			// End import by printing current version
+			Debug.Log($"RePort v{version}: success");
 		}
 
 		// Combines partial models (meshes and levels of detail and prefab places) into complete models
@@ -558,7 +564,7 @@ namespace Reification {
 
 					// IMPORTANT: Prefab replacement must happen after merged assets are imported, but before assets are swapped
 					// in order to enable prefab gathering.
-					ReplacePrefabs.ApplyTo(model, searchPath);
+					ReplacePrefabs.ApplyTo(model, prefabPath);
 
 					// FIXME: This search path should NOT be adjacent!
 					// Swap assets for copies created when combining partial models

@@ -1,9 +1,9 @@
 // Unity built-in shader source. Copyright (c) 2016 Unity Technologies. MIT license (see license.txt)
 // From https://unity3d.com/get-unity/download/archive (Unity [Release]: Downloads drop-down -> Built in shaders)
 // Copy of builtin_shaders-[Release]/DefaultResourcesExtra/Standard.shader 
-// Modified to enable dithering LOD crossfade by removing comments, and renaming to "Reification/StandardCrossfade"
+// Modified to enable dithering LOD crossfade by removing comments, and renaming to "StandardCrossfade"
 
-Shader "Reification/StandardCrossfade"
+Shader "StandardCrossfade"
 {
     Properties
     {

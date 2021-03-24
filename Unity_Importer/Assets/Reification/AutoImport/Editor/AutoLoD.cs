@@ -228,7 +228,7 @@ namespace Reification {
 			so.ApplyModifiedProperties();
 		}
 
-		public const string fadingShaderName = "Reification/StandardCrossfade";
+		public const string fadingShaderName = "StandardCrossfade";
 		static Shader _crossfadeShader = null;
 		static public Shader crossfadeShader {
 			get {
