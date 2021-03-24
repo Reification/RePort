@@ -24,6 +24,7 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Editor/AutoStatic.cs",
 			"Assets/Reification/AutoImport/Editor/AutoColliders.cs",
 			"Assets/Reification/AutoImport/Editor/AutoScene.cs",
+			"Assets/Reification/AutoImport/Editor/AutoLightSources.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightProbes.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightmaps.cs",
 			"Assets/Reification/AutoImport/Editor/Importers/RhinoImporters.cs",
