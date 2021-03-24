@@ -564,7 +564,7 @@ namespace Reification {
 
 					// IMPORTANT: Prefab replacement must happen after merged assets are imported, but before assets are swapped
 					// in order to enable prefab gathering.
-					ReplacePrefabs.ApplyTo(model, searchPath);
+					ReplacePrefabs.ApplyTo(model, prefabPath);
 
 					// FIXME: This search path should NOT be adjacent!
 					// Swap assets for copies created when combining partial models
