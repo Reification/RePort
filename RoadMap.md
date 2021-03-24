@@ -17,6 +17,8 @@ Presently, the project only includes a custom exporter for Rhino. Other exporter
 * Identify model exporter from file name
 * Extensible importer support
 * Models can be reimported and will recreate deleted assets
+* Press enter/return to illuminate dark spaces
+* Scroll to adjust height, press scroll to reset height
 * Add light source & height adjustment to player
 * Extensible handling of imported files by provenance
 
@@ -25,14 +27,23 @@ Presently, the project only includes a custom exporter for Rhino. Other exporter
 * Rhino plugin confirms version when used
 * Meshes are extracted from models
 
-## v0.3.0 Semantic Importing
-* Interactive export process for vegetation
-* Optimized import process for vegetation
+## v0.3.0 - Light Sources - 23 Mar 2021
+* Rhino light sources are imported with correct orientation and shape
+* Visible sources are created for all lights
+* Gain and bloom adjustments make light sources appear luminous
+* Optional "good" alternative to "fast" lighting generation
+
+## v0.3.1 - Unity Update
+* Update to Unity 2020 LTS
+* Multi-touch trackpad support
+
+## v0.3.2 - Semantic Importing
+* Interactive export and import for plants
+* Interactive export and import for terrain
 * Allow passage through objects named "door" or "window"
 * Make materials shiney if they are named "glass" or "metal"
-* Extensible import stages
 
-## v0.3.1 - Progress Bars & Performance
+## v0.3.3 - Progress Bars & Performance
 * Import progress indictors for entire process
 * Mesh modification progress pop-up
 * Identify normalmap textures during import

@@ -17,8 +17,8 @@ namespace Reification {
 			foreach(var gameObject in Selection.gameObjects) {
 				var assetType = PrefabUtility.GetPrefabAssetType(gameObject);
 				if(
-					assetType == PrefabAssetType.Model ||
-					assetType == PrefabAssetType.NotAPrefab
+					assetType == PrefabAssetType.NotAPrefab ||
+					assetType == PrefabAssetType.MissingAsset
 				) return false;
 			}
 			return true;
@@ -45,7 +45,7 @@ namespace Reification {
 			// required for object placement will not hit colliders
 			AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 			AddDefaults(scenePath);
-			// IMPORTANT: Changes made to scene aftyer save but before import 
+			// IMPORTANT: Changes made to scene after save but before import 
 			// will overwrite current changes unless scene is imported.
 			AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 			return scenePath;
@@ -70,7 +70,7 @@ namespace Reification {
 
 			// Add objects to scene
 			foreach(var gameObject in gameObjects) EP.Instantiate(gameObject);
-			// PROBLEM: If scene is created during asset import physics computations will not be initialized
+			// WARNING: If scene is created during asset import physics computations will not be initialized
 
 			// PROBLEM: At end of import the open scene will have been modified, so a pop-up will appear.
 			// SOLUTION: After loading the scene in additive mode, close it.
@@ -85,28 +85,20 @@ namespace Reification {
 				// IMPORTANT: Lightmapping.Bake() should be called when only scenes contributing to bake are open
 				var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
 
-				// Get scene bounds
-				// TODO: Move this to bounds extension.
-				var emptyBounds = true;
-				var sceneBounds = new Bounds();
-				foreach(var sceneObject in scene.GetRootGameObjects()) {
-					AutoLightProbes.ApplyTo(sceneObject);
-					// TODO: Hook for Reflection probes, Acoustic probes...
-					// NOTE: AutoLights modifies imported values, but the prefab will retain originals.
-					// IDEA: Use refelction to create a configuration hooks in ModelImport.
+				// Get bounds of all models in scene
+				var sceneBounds = SceneBounds(scene);
 
-					var objectRenderers = sceneObject.GetComponentsInChildren<Renderer>();
-					foreach(var renderer in objectRenderers) {
-						if(emptyBounds) {
-							sceneBounds = renderer.bounds;
-							emptyBounds = false;
-						} else {
-							sceneBounds.Encapsulate(renderer.bounds);
-						}
-					}
+				// NOTE: Modifications of scene prefabs instances will be overrides
+				foreach(var gameObject in scene.GetRootGameObjects()) {
+					// IDEA: In the case of combined scenes, lights from one scene could contribute to others
+					foreach(var light in gameObject.GetComponentsInChildren<Light>()) SetLightRange(sceneBounds, light);
+					// TODO: Hook for intensity adjustment based on light target
+
+					AutoLightSources.ApplyTo(gameObject);
+					AutoLightProbes.ApplyTo(gameObject);
+					// TODO: Hook for Reflection probes, Acoustic probes...
 				}
 
-				// IDEA: Search folder for prefabs and instantiate all of them in scene
 				CreateSun(sceneBounds);
 				CreatePlayer(sceneBounds);
 				// TODO: Use IConfigurable to configure objects in scene.
@@ -117,6 +109,49 @@ namespace Reification {
 				EditorSceneManager.RestoreSceneManagerSetup(sceneSetup);
 			}
 		}
+
+		// TODO: Move SceneBounds to bounds extension.
+
+		/// <summary>
+		/// Bounds encapsulating all renderers in scene
+		/// </summary>
+		static public Bounds SceneBounds(Scene scene) {
+			var emptyBounds = true;
+			var sceneBounds = new Bounds();
+			foreach(var gameObject in scene.GetRootGameObjects()) {
+				var objectRenderers = gameObject.GetComponentsInChildren<Renderer>();
+				foreach(var renderer in objectRenderers) {
+					if(emptyBounds) {
+						sceneBounds = renderer.bounds;
+						emptyBounds = false;
+					} else {
+						sceneBounds.Encapsulate(renderer.bounds);
+					}
+				}
+			}
+			return sceneBounds;
+		}
+
+		// TODO: Move SetLightRange to bounds extension 
+
+		/// <summary>
+		/// Set light range to envelop bounds
+		/// </summary>
+		static public void SetLightRange(Bounds bounds, Light light) {
+			var toCorner = Vector3.zero;
+			var toCenter = bounds.center - light.transform.position;
+			for(var i = 0; i < 3; ++i) {
+				var min = toCenter[i] - bounds.extents[i];
+				var max = toCenter[i] + bounds.extents[i];
+				toCorner[i] = (Mathf.Abs(min) > Mathf.Abs(max)) ? min : max;
+			}
+			light.range = toCorner.magnitude;
+		}
+
+		// TODO: Extensible scene objects
+		// OPTION: Every prefab in a folder + iConfig component if needed
+		// OPTION: Register prefabs for instantiation (would need to be serialized)
+		// SOLUTION: Identify ONE template scene and rely on contents iConfig actions
 
 		public const string sunPrefabPath = "Assets/Reification/AutoImport/Prefabs/Sun.prefab";
 

@@ -93,7 +93,7 @@ namespace Reification {
 				if(PrefabUtility.GetPrefabAssetType(instantiate) != PrefabAssetType.NotAPrefab) {
 					gameObject = PrefabUtility.InstantiatePrefab(instantiate) as GameObject;
 				} else {
-					gameObject = Object.Instantiate(instantiate);
+					gameObject = GameObject.Instantiate(instantiate);
 				}
 				if(useEditorUndo) {
 					Undo.RegisterCreatedObjectUndo(gameObject, "Instantiate(" + instantiate.name + ")");
@@ -102,7 +102,7 @@ namespace Reification {
 				}
 #endif
 			} else {
-				gameObject = Object.Instantiate(instantiate);
+				gameObject = GameObject.Instantiate(instantiate);
 			}
 			return gameObject;
 		}

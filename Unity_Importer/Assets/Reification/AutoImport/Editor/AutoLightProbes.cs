@@ -19,7 +19,7 @@ namespace Reification {
 	/// </remarks>
 	public class AutoLightProbes {
 		const string menuItemName = "Reification/Auto Light Probes";
-		const int menuItemPriority = 30;
+		const int menuItemPriority = 31;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
@@ -64,7 +64,6 @@ namespace Reification {
 			probeGroup.probePositions = LightProbeGrid(gameObject, probeSpaces);
 		}
 
-		// TODO: Move into physics extensions
 		public static RaycastHit[] RaycastLine(Vector3 origin, Vector3 ending, int layerMask = Physics.DefaultRaycastLayers, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.Ignore) {
 			// Raycast in both directions to identify enter and exit points
 			var direction = ending - origin;
@@ -144,7 +143,8 @@ namespace Reification {
 		// Consequently, if a probe does not provide lighting information for any lower levels of detail it could be removed.
 		// This can be tested with a volume overlap.
 
-		// IDEA: Decimate light probes acording to scale in lightmap.
+		// IDEA: When light probes all touch one large object, decimate probes acording to object scale in lightmap.
+		// TODO: This requires downscaling large object lightmaps (or even partitioning the objects)
 		// In particular, terrain will contribute to lightmap, but will have a scale of 0,
 		// so it will not receive lightmapping itself.
 

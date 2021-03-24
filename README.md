@@ -6,7 +6,7 @@ Convert your building design into a first-person experience in 3 steps:
 
 Supports most CAD/BIM programs, full features for Rhino only
 
-## [Download the latest package](https://github.com/Reification/RePort/releases/download/v0.2.1/Reification_RePort_v0.2.1.zip)
+## [Download the latest package](https://github.com/Reification/RePort/releases/download/v0.3.0/RePort.zip)
 No coding required - just drag-and-drop each plugin to install
 
 ## RePort features include:

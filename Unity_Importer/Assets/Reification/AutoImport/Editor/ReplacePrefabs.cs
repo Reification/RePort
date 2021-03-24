@@ -7,19 +7,16 @@ using UnityEditor;
 
 namespace Reification {
 	/// <summary>
-	/// Replaces placeholder meshes with the corresponding prefabs
+	/// Replaces placeholder transforms with their corresponding prefabs
 	/// </summary>
 	/// <remarks>
-	/// A placeholder mesh is a tetrahedra whose vertices describe the general linear transform
-	/// that will be applied to the prefab instance that will replace it.
-	/// The transform derivation assumes 4 vertices, in a chiral order that is consistent with Unity.
+	/// A placeholder is an empty transform with a name that identifies the corresponding prefab.
+	/// Using placeholders, a model exporter can describe each referentially instantiated constituent as a
+	/// separate model file, with the constituent becoming a prefab on import.
 	/// </remarks>
 	public class ReplacePrefabs {
 		const string menuItemName = "Reification/Replace Prefabs";
 		const int menuItemPriority = 20;
-
-		// IMPORTANT: It should be possible to apply this directly to prefabs
-		// NOTE: There is some risk of recursion - hopefully that throws an error.
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		static private bool Validate() {
@@ -114,51 +111,22 @@ namespace Reification {
 		/// Every '=' is removed from name in order to prevent attempted replacement during reimport
 		/// In the imported model, names will have been made unique by appending a suffix,
 		/// but uniqueness will have been determined when the prefab name was included.
-		/// In order to ensure uniqueness when check for replacements, this the prefab name will be retaining.
+		/// In order to ensure uniqueness when checking for replacements the prefab name will be retained.
 		/// 
 		/// WARNING: Collisions are still possible dues to the '=' removal. This can be prevented by
 		/// ensuring that this character does not appear in the object or prefab name parts.
 		/// </remarks>
-		static public string ConfigureName(GameObject gameObject) => gameObject.name.Trim('=').Replace('=', '-');
+		static public string ConfigureName(string name) => name.Trim('=').Replace('=', '-');
 
 		// Model export generates meshes in world coordinates
 		// In order to retain information, each prefab is replaced with a transformed tetrahedron
 		static void ConfigurePrefab(Transform placeholder, CachedPrefab cached) {
-			// Validate locator
-			// WARNING: If a tetrahedron is imported with ModelImporter.meshOptimizationFlags != 0
-			// the vertex array can be reordered, and vertices may be replicated up to 3 times
-			// to support a normal vector for each assocaited triangle.
-			var meshFilter = placeholder.GetComponent<MeshFilter>();
-			if(!meshFilter) {
-				Debug.Log($"ReplacePrefab({placeholder.Path()}) missing MeshFilter");
-				return;
-			}
-			Mesh sharedMesh = meshFilter.sharedMesh;
-			if(!sharedMesh) {
-				Debug.Log($"ReplacePrefab({placeholder.Path()}) missing sharedMesh");
-				return;
-			}
-			var vertices = sharedMesh.vertices;
-			if(vertices == null || vertices.Length != 4) {
-				Debug.Log($"ReplacePrefab({placeholder.Path()}) incorrect vertext count {vertices?.Length ?? 0}");
-				return;
-			}
-
-			// Derive basis in world coordinates
-			var origin = placeholder.TransformPoint(vertices[0]);
-			var basisX = placeholder.TransformPoint(vertices[1]) - origin;
-			var basisY = placeholder.TransformPoint(vertices[2]) - origin;
-			var basisZ = placeholder.TransformPoint(vertices[3]) - origin;
-
-			// TODO: Use SVD to construct transform, which can include shear
-			// TEMP: Assume transform is axial scaling followed by rotation only
-			// NOTE: The origin and bases are simply the columns of an affine (3x4) transform matrix
 			var prefab = (PrefabUtility.InstantiatePrefab(cached.prefab) as GameObject).transform;
-			prefab.name = placeholder.name;
-			prefab.localScale = new Vector3(basisX.magnitude, basisY.magnitude, basisZ.magnitude);
-			prefab.rotation = Quaternion.LookRotation(basisZ, basisY);
-			prefab.position = origin;
 			EP.SetParent(prefab, placeholder.parent);
+			prefab.localPosition = placeholder.localPosition;
+			prefab.localRotation = placeholder.localRotation;
+			prefab.localScale = placeholder.localScale;
+			prefab.name = placeholder.name;
 		}
 
 		static void ReplacePlaceholders(string prefabPath, GameObject gameObject) {
@@ -167,9 +135,9 @@ namespace Reification {
 			foreach(var child in children) {
 				var name_parts = child.name.Split('=');
 				if(name_parts.Length == 1) continue;
-				if(prefabs.TryGetValue(name_parts[name_parts.Length - 1], out var cached)) {
+				if(prefabs.TryGetValue(name_parts[0], out var cached)) {
 					// When reimporting retain previous replacement if present
-					string replaceName = ConfigureName(child);
+					string replaceName = ConfigureName(child.name);
 					var replaceList = child.transform.parent.NameFindInChildren(replaceName);
 					// ASSUME: Each placeholder yields a unique configured name
 					if(replaceList.Length == 0) {
