@@ -13,7 +13,7 @@ namespace Reification {
 
 		public float minHeight = 0.5f; // meters
 
-		float iniHeight = 0f;
+		float iniHeight = 1.5f;
 
 		CharacterController controller;
 
@@ -33,12 +33,17 @@ namespace Reification {
 		}
 
 		void SetHeight(float height) {
-			var localPosition = transform.localPosition;
-			localPosition.y = Mathf.Clamp(height, minHeight, maxHeight);
-			transform.localPosition = localPosition;
+			var oldHeight = transform.localPosition.y;
+			var newHeight = Mathf.Clamp(height, minHeight, maxHeight);
 
-			controller.height = height + controller.radius;
+			// Extend player collider
+			controller.height = newHeight + controller.radius;
 			controller.center = new Vector3(0f, controller.height / 2f, 0f);
+
+			// Raise player camera
+			var newCameraPosition = transform.localPosition;
+			newCameraPosition.y = newHeight;
+			transform.localPosition = newCameraPosition;
 		}
 	}
 }
