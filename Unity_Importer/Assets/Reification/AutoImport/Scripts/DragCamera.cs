@@ -16,9 +16,9 @@ namespace Reification {
 
 		bool MouseButtonIsPressed() {
 			return
-				Input.GetMouseButton(0) || // Left
-				Input.GetMouseButton(1) || // Right
-				Input.GetMouseButton(2); // Middle
+				Input.GetMouseButton(0) || // Primary
+				Input.GetMouseButton(1) || // Secondary
+				Input.GetMouseButton(2); // Scroll wheel
 		}
 
 		bool firstDragFrame = true;
