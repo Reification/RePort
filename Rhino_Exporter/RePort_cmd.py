@@ -620,6 +620,9 @@ def RunCommand(is_interactive):
         print(command_preamble + ": no export location -> abort")
         return
     
+    # Record modification status
+    modified = sc.doc.Modified
+    
     name_map = {}
     selected = rs.SelectedObjects(True, True)
     try:
@@ -643,6 +646,9 @@ def RunCommand(is_interactive):
         rs.SelectObjects(selected)
         
         rs.EnableRedraw(True)
+    
+    # Restore modification status - all changes have been reverted
+    sc.doc.Modified = modified
     print(command_preamble + ": success")
 
 # GOAL: No changes to scene (no save request)
