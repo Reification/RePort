@@ -124,12 +124,6 @@ namespace Reification {
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
 		}
 
-		// PROBLEM: Model importing requires 2 passes:
-		// (1) Texture extraction and material remapping.
-		// (2) Configuration using remapped textures.
-		// PROBLEM: When reimporting some configurations (assets names) will be lost
-		// SOLUTION: Only call configuration processing on second import
-
 		static HashSet<string> extractionImport = new HashSet<string>();
 		static HashSet<string> configuredImport = new HashSet<string>();
 
@@ -137,10 +131,6 @@ namespace Reification {
 			// Only apply RePort importing process to models in importPath
 			if(!assetPath.StartsWith(importPath)) return;
 			//Debug.Log($"RePort.OnPreprocessModel({assetPath})");
-
-			// QUESTION: Are previous unwrap results used when reimporting?
-			// If unwrap is cached then don't change import settings.
-			// If unwrap is not cached then use fastest settings for extraction import.
 
 			var modelImporter = assetImporter as ModelImporter;
 			if(modelImporter.importSettingsMissing) {
@@ -154,8 +144,6 @@ namespace Reification {
 			} else {
 				// Configure reimport
 				ClearRemappedAssets(modelImporter);
-				// FIXME: Selection reveals model in inspect, so if any external object mapping is removed
-				// it will trigger a pop-up asking whether to apply or revert changes to import settings
 			}
 
 			// Enqueue model for processing during editor update
@@ -163,6 +151,11 @@ namespace Reification {
 			// AssetDatabase is implicitly subject to StartAssetEditing()
 			// This prevents created asset discovery, and also prevents created collider physics
 			// SOLUTION: Enqueue asset combine, assemble & configure steps after import concludes
+			// PROBLEM: Model importing requires 2 passes:
+			// (1) Texture extraction and material remapping.
+			// (2) Configuration using remapped textures.
+			// PROBLEM: When reimporting some configurations (assets names) will be lost
+			// SOLUTION: Only call configuration processing on second import
 			if(!extractionImport.Contains(assetPath)) {
 				extractionImport.Add(assetPath);
 				EditorApplication.update += ProcessExtractionImport;
@@ -498,7 +491,12 @@ namespace Reification {
 			// so that prefabs can be linked immediately and updated subsequently.
 			// NOTE: Existing merged prefabs will be updated by new imports
 			var mergedPrefabs = new Dictionary<string, GameObject>();
-			foreach(var path in partialModels.Keys) CreateMerged(path, mergedPrefabs);
+			foreach(var path in partialModels.Keys) {
+				// IMPORTANT: this will not create an importPath named RePort,
+				// since importPath ends with '/' which is not included in path.
+				if(!path.StartsWith(importPath)) continue;
+				CreateMerged(path, mergedPrefabs);
+			}
 			AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
 			try {
@@ -522,28 +520,21 @@ namespace Reification {
 			}
 		}
 
-		// Creates a merged prefab assets at each folder inside of import path
+		// Create an empty prefab adjacent to the merged asset folder
 		static void CreateMerged(string path, Dictionary<string, GameObject> mergedPrefabs) {
-			var pathPart = path;
-			// TODO: This only needs to recurse once
-			while(pathPart.StartsWith(importPath)) {
-				if(!mergedPrefabs.ContainsKey(pathPart)) {
-					// Find or make a merged prefab
-					var mergedPath = pathPart + ".prefab";
-					var merged = AssetDatabase.LoadAssetAtPath<GameObject>(mergedPath);
-					if(!merged) {
-						var empty = EP.Instantiate();
-						empty.name = pathPart.Substring(pathPart.LastIndexOf('/') + 1);
-						// WARNING: SaveAsPrefabAsset will return null while AssetDatabase.StartAssetEditing() pertains
-						merged = PrefabUtility.SaveAsPrefabAsset(empty, mergedPath);
-						EP.Destroy(empty);
-						//Debug.Log($"Created empty merged object: {pathPart}.prefab");
-					}
-					mergedPrefabs.Add(pathPart, merged);
+			if(!mergedPrefabs.ContainsKey(path)) {
+				// Find or make a merged prefab
+				var mergedPath = path + ".prefab";
+				var merged = AssetDatabase.LoadAssetAtPath<GameObject>(mergedPath);
+				if(!merged) {
+					var empty = EP.Instantiate();
+					empty.name = path.Substring((path.LastIndexOf('/') + 1));
+					// WARNING: SaveAsPrefabAsset will return null while AssetDatabase.StartAssetEditing() pertains
+					merged = PrefabUtility.SaveAsPrefabAsset(empty, mergedPath);
+					EP.Destroy(empty);
+					//Debug.Log($"Created empty merged object: {pathPart}.prefab");
 				}
-				pathPart = pathPart.Substring(0, pathPart.LastIndexOf('/'));
-				// IMPORTANT: this will not create an importPath named prefab, 
-				// since importPath ends with '/' which Substring defining pathPart will remove
+				mergedPrefabs.Add(path, merged);
 			}
 		}
 
