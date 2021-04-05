@@ -84,6 +84,8 @@ namespace Reification {
 			light.transform.localScale = Vector3.one;
 
 			// Configure using transform local scale parameters
+			// NOTE: Disk Lights are not exported in Rhino
+			// NOTE: Volume light type are not imported to Unity, and is not exported by Rhino
 			var lightType = placeholder.name.Split('=')[0];
 			switch(lightType) {
 			case "DirectionalLight":
@@ -94,18 +96,23 @@ namespace Reification {
 				break;
 			case "SpotLight":
 				light.type = LightType.Spot;
-				light.spotAngle = 2f * Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.x) * Mathf.Rad2Deg;
-				light.innerSpotAngle = 2f * Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.y) * Mathf.Rad2Deg;
+				light.spotAngle = Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.x) * Mathf.Rad2Deg * 2f;
+				light.innerSpotAngle = Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.y) * Mathf.Rad2Deg * 2f;
 				break;
 			case "RectangularLight":
 				light.type = LightType.Rectangle;
-				light.areaSize = new Vector2(2f * placeholder.localScale.x, 2f * placeholder.localScale.y);
+				light.areaSize = new Vector2(placeholder.localScale.x * 2f, placeholder.localScale.y * 2f);
+				break;
+			case "LinearLight":
+				// NOTE: Linear lights are not supported in Unity
+				// A subsequent conversion to a collection of finite-size rectangular lights will be required
+				light.type = LightType.Rectangle;
+				light.areaSize = new Vector2(placeholder.localScale.x * 2f, 0f);
 				break;
 			default:
-				// NOTE: Disk Lights are not supported in Rhino
-				// PROBLEM: Line Lights are not supported in Unity
 				Debug.LogWarning($"Unsupported light type {lightType} -> configure as point light");
 				light.type = LightType.Point;
+				light.enabled = false;
 				break;
 			}
 
