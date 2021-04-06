@@ -331,9 +331,13 @@ def ModelScale():
     if units == 25: scale = meter * 149597870700 * 648000 / 3.14159265358979323
     return scale
 
+# Zero vector (defines vector type as list)
+def ZeroVector():
+    return [0, 0, 0]
+
 # Copy of unit basis vector
 def UnitVector(b):
-    vector = [0, 0, 0]
+    vector = ZeroVector()
     vector[b] = 1
     return rs.CreateVector(vector)
 
@@ -399,12 +403,15 @@ def BlockLocation(object, scale):
 # PROBLEM: Lights-only export fails!
 # PROBLEM: Lights are exported without rotation or shape!
 # SOLUTION: Create a placeholder tetrahedron that encodes light parameters
+# PROBLEM: FBX does not support line light type
+# https://help.autodesk.com/view/FBX/2020/ENU/?guid=FBX_Developer_Help_cpp_ref_class_fbx_light_html
+# SOLUTION: Describe line lights as area lights with length equal to zero
 # - Rhino exports color, intensity and type
 # - Placeholders will be created with corresponding names
 # - Light type will be encoded in the name in case of unsupported types
 # - Rectangles use X and Y scale for dimensions
 # - Spots will use X (and equal Y) ratio to Z=1 for opening angle
-# - Lines have a Y scale equal to the width
+# - Lines have a Y scale equal to the width, other dimensions equal to zero
 # - Range must be determined from context on import
 # https://developer.rhino3d.com/api/rhinoscript/light_methods/light_methods.htm
 def LightLocation(light, scale):
@@ -459,7 +466,11 @@ def LightLocation(light, scale):
         lightType = "LinearLight"
         widthBasis = direction / 2
         position = position + widthBasis
-        basis[2] = widthBasis
+        basis = [
+            widthBasis,
+            basis[1],
+            -basis[0]
+        ]
         #clone = rs.AddLinearLight (position - widthBasis, position + widthBasis)
     
     # Create placeholder mesh
