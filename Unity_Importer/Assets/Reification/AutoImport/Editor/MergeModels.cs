@@ -50,7 +50,7 @@ namespace Reification {
 			) PrefabUtility.LoadPrefabContents(AssetDatabase.GetAssetPath(mergeTarget));
 		}
 
-		static public void ApplyTo(GameObject mergeTarget, params GameObject[] mergeSources) {
+		public static void ApplyTo(GameObject mergeTarget, params GameObject[] mergeSources) {
 			using(var editScope = new EP.EditGameObject(mergeTarget)) {
 				var targetEdit = editScope.editObject;
 				if(!targetEdit) return;
@@ -69,7 +69,7 @@ namespace Reification {
 		}
 
 		// Find shared start to names in nameList
-		static public string MatchStart(params string[] nameList) {
+		public static string MatchStart(params string[] nameList) {
 			if(nameList.Length == 0) return "";
 			if(nameList.Length == 1) return nameList[0];
 			var match = "";

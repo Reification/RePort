@@ -26,7 +26,7 @@ namespace Reification {
 			foreach(var selection in selectionList) ApplyTo(selection);
 		}
 
-		static public void ApplyTo(GameObject gameObject, bool prefabs = false) {
+		public static void ApplyTo(GameObject gameObject, bool prefabs = false) {
 			// NOTE: Light sources can be created as prefab overrides,
 			// so the prefab does NOT need to be opened for editing
 
@@ -49,7 +49,7 @@ namespace Reification {
 		}
 		static string ConfigureName(string name) => name + "_Source";
 
-		static public void CreateSource(Light light) {
+		public static void CreateSource(Light light) {
 			// ASSUME: All children of light are sources
 			foreach(var source in light.gameObject.Children()) EP.Destroy(source);
 
@@ -126,13 +126,13 @@ namespace Reification {
 		/// <remarks>
 		/// Intensity is scaled relative to the area of the light
 		/// </remarks>
-		static public GameObject MakeAreaCopy(Light light, Vector2 areaSize) {
+		public static GameObject MakeAreaCopy(Light light, Vector2 areaSize) {
 			var gameObject = EP.Instantiate();
 			GameObjectUtility.SetStaticEditorFlags(gameObject, (StaticEditorFlags)~0);
 			EP.SetParent(gameObject.transform, light.transform.parent);
 			gameObject.transform.localPosition = light.transform.localPosition;
 			gameObject.transform.localRotation = light.transform.localRotation;
-			var areaLight = gameObject.AddComponent<Light>();
+			var areaLight = EP.AddComponent<Light>(gameObject);
 			areaLight.lightmapBakeType = LightmapBakeType.Baked;
 			areaLight.type = LightType.Rectangle;
 			areaLight.areaSize = areaSize;
@@ -204,7 +204,7 @@ namespace Reification {
 		// OPTION: Provide a component to monitor the light intensity and update the emissive material
 		// accordingly - both static and dynamic. This could also tag actual child light sources.
 
-		static public GameObject CreatePrimitiveSource(Light light, PrimitiveType primitiveType) {
+		public static GameObject CreatePrimitiveSource(Light light, PrimitiveType primitiveType) {
 			var source = GameObject.CreatePrimitive(primitiveType);
 			source.SetActive(light.enabled);
 			source.layer = light.gameObject.layer;
@@ -234,7 +234,7 @@ namespace Reification {
 			return source;
 		}
 
-		static public void LightSourceMeshRenderer(Light light, MeshRenderer meshRenderer) {
+		public static void LightSourceMeshRenderer(Light light, MeshRenderer meshRenderer) {
 			meshRenderer.receiveShadows = false;
 			meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 			meshRenderer.receiveGI = ReceiveGI.LightProbes;
@@ -264,7 +264,7 @@ namespace Reification {
 		/// <summary>
 		/// Configure material emission to match light emission
 		/// </summary>
-		static public void LightSourceMaterial(Light light, Material material) {
+		public static void LightSourceMaterial(Light light, Material material) {
 			// Support use by light object prefabs
 			material.enableInstancing = !light.gameObject.isStatic;
 
