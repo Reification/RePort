@@ -53,7 +53,7 @@ namespace Reification {
 			}
 		}
 
-		static public void ApplyTo(GameObject gameObject, string pathRoot) {
+		public static void ApplyTo(GameObject gameObject, string pathRoot) {
 			var assetType = PrefabUtility.GetPrefabAssetType(gameObject);
 			if(assetType == PrefabAssetType.MissingAsset) return;
 			if(assetType == PrefabAssetType.Model) {
@@ -88,7 +88,7 @@ namespace Reification {
 
 		// TODO: This should go to material extensions
 		// NOTE: This does not check shader type - other materials may use some or all of the same names
-		static public Dictionary<string, Texture> GetStandardMaterialTextures(Material material) {
+		public static Dictionary<string, Texture> GetStandardMaterialTextures(Material material) {
 			var textures = new Dictionary<string, Texture>() {
 			{ "_MainTex", null }, // Albedo
 			{ "_MetallicGlossMap", null }, // Metallicity

@@ -10,7 +10,7 @@ using UnityEditor.SceneManagement;
 
 namespace Reification {
 	public class RePort : AssetPostprocessor {
-		static public Version version { get; private set; } = new Version(0, 3, 0);
+		public static Version version { get; private set; } = new Version(0, 3, 0);
 
 		// This preprocessor pertains only to models in this path
 		public const string importPath = "Assets/RePort/";
@@ -30,7 +30,7 @@ namespace Reification {
 		/// <param name="element">Optionally empty: The model element identifier, used to configure import</param>
 		/// <param name="exporter">Optionally empty: The model source application, identifies configuration delegate</param>
 		/// <param name="type">The model file type</param>
-		static public void ParseModelName(string assetPath, out string path, out string name, out string element, out string exporter, out string type) {
+		public static void ParseModelName(string assetPath, out string path, out string name, out string element, out string exporter, out string type) {
 			path = "";
 			name = "";
 			element = "";
@@ -113,7 +113,7 @@ namespace Reification {
 		/// <summary>
 		/// Register import post-processing
 		/// </summary>
-		static public void RegisterImporter(string exporter, Importer importer) {
+		public static void RegisterImporter(string exporter, Importer importer) {
 			if(importerDict.ContainsKey(exporter)) importerDict[exporter] = importer;
 			else importerDict.Add(exporter, importer);
 			// QUESTION: How can conflicts be identified when editing importers?
@@ -175,7 +175,7 @@ namespace Reification {
 		/// ClearRemappedAssets will remove all map entries for assets that do not exist.
 		/// </remarks>
 		/// <param name="force">Remove remap even if external assets exist</param>
-		static public void ClearRemappedAssets(ModelImporter modelImporter, bool force = false) {
+		public static void ClearRemappedAssets(ModelImporter modelImporter, bool force = false) {
 			var externalObjectMap = modelImporter.GetExternalObjectMap();
 			foreach(var map in externalObjectMap) {
 				var identifier = map.Key;
@@ -198,7 +198,7 @@ namespace Reification {
 		/// Lights are not imported by default since their units
 		/// may be physics instead of rendered.
 		/// </remarks>
-		static public void MeshesImporter(ModelImporter modelImporter) {
+		public static void MeshesImporter(ModelImporter modelImporter) {
 			modelImporter.generateSecondaryUV = true;
 			// CRITICAL: Generation after meshes are extracted is not possible
 			// WARNING: Lightmap UV generation is very slow
@@ -226,7 +226,7 @@ namespace Reification {
 		/// <summary>
 		/// Import to preserve transform information in placeholder meshes
 		/// </summary>
-		static public void PlacesImporter(ModelImporter modelImporter) {
+		public static void PlacesImporter(ModelImporter modelImporter) {
 			modelImporter.generateSecondaryUV = false;
 
 			modelImporter.importLights = false;
@@ -258,7 +258,7 @@ namespace Reification {
 		/// <remarks>
 		/// WARNING: Model GameObjects and Asset names will revert on each import.
 		/// </remarks>
-		static public string SafeAssetName(string assetName) {
+		public static string SafeAssetName(string assetName) {
 			// Remove leading and trailing spaces
 			// NOTE: (Unity2019.4 undocumented) AssetDatabase.GenerateUniqueAssetPath will trim name spaces
 			var trimChars = new char[] { ' ' };
@@ -312,7 +312,7 @@ namespace Reification {
 		/// Excluding cameras or lights from a model import removes components,
 		/// but their associated GameObjects will persist in the hierarchy.
 		/// </remarks>
-		static public void RemoveEmpty(GameObject gameObject) {
+		public static void RemoveEmpty(GameObject gameObject) {
 			// IMPORTANT: Before counting children, apply RemoveEmpty to children
 			// since their removal could result in children being empty
 			var children = gameObject.transform.Children();
@@ -385,7 +385,7 @@ namespace Reification {
 		/// Modules/AssetPipelineEditor/ImportSettings/ModelImporterMaterialEditor.cs
 		/// private void ExtractTexturesGUI()
 		/// </remarks>
-		static public bool ExtractTextures(string modelPath) {
+		public static bool ExtractTextures(string modelPath) {
 			var modelImporter = AssetImporter.GetAtPath(modelPath) as ModelImporter;
 			if(modelImporter == null) return false;
 

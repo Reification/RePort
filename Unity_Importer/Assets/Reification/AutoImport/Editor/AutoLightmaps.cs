@@ -72,7 +72,7 @@ namespace Reification {
 		/// PROBLEM: Calling AssetDatabase.StopAssetEditing() during import puts editor into hung state.
 		/// SOLUTION: Enqueue scenes to be baked and wait for importing to complete.
 		/// </remarks>
-		static public void ApplyTo(LightmapBakeMode lightmapBakeMode, params string[] scenePathList) {
+		public static void ApplyTo(LightmapBakeMode lightmapBakeMode, params string[] scenePathList) {
 			if(scenePathList.Length == 0) return;
 
 			var sceneSetup = EditorSceneManager.GetSceneManagerSetup();
@@ -117,7 +117,7 @@ namespace Reification {
 		}
 
 		// Expose settings in the Lighting panel to scripted modification 
-		static public SerializedObject GetLightmapSettings(Scene scene) {
+		public static SerializedObject GetLightmapSettings(Scene scene) {
 			if(!scene.isLoaded) {
 				EditorSceneManager.SaveOpenScenes();
 				EditorSceneManager.LoadScene(scene.path, LoadSceneMode.Single);
@@ -131,14 +131,14 @@ namespace Reification {
 			return new SerializedObject(lightmapSettingsObject);
 		}
 
-		static public void FastResolution(SerializedObject lightmapSettings) {
+		public static void FastResolution(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue = 10f; // Direct Resolution (texels / meter)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue = 2f; // Indirect Resolution (texels / meter)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Padding").intValue = 2;
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AtlasSize").intValue = Mathf.NextPowerOfTwo(Mathf.Clamp(1024, 32, 4096));
 		}
 
-		static public void GoodResolution(SerializedObject lightmapSettings) {
+		public static void GoodResolution(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue = 50f; // Direct Resolution (texels / meter)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue = 20f; // Indirect Resolution (texels / meter)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Padding").intValue = 2;
@@ -155,7 +155,7 @@ namespace Reification {
 		// NOTE: ExtractAmbientOcclusion ignores exponents, and only works in Enlighten directMode bake:
 		// https://docs.unity3d.com/ru/2019.4/ScriptReference/Experimental.Lightmapping-extractAmbientOcclusion.html
 
-		static public void FastAmbientOcclusion(SerializedObject lightmapSettings) {
+		public static void FastAmbientOcclusion(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AO").boolValue = false; // Ambient Occlusion
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AOMaxDistance").floatValue = 1f; // Max Distance (meters)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponent").floatValue = 1f; // Indirect Contribution (contrast)
@@ -163,7 +163,7 @@ namespace Reification {
 			//lightmapSettings.FindProperty("m_ExtractAmbientOcclusion").boolValue = false; // Create separate texture for ambient occlusion
 		}
 
-		static public void GoodAmbientOcclusion(SerializedObject lightmapSettings) {
+		public static void GoodAmbientOcclusion(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AO").boolValue = true; // Ambient Occlusion
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AOMaxDistance").floatValue = 1f; // Max Distance (meters)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponent").floatValue = 1f; // Indirect Contribution (contrast)
@@ -171,13 +171,13 @@ namespace Reification {
 			//lightmapSettings.FindProperty("m_ExtractAmbientOcclusion").boolValue = true; // Create separate texture for ambient occlusion
 		}
 
-		static public void FastFinalGather(SerializedObject lightmapSettings) {
+		public static void FastFinalGather(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGather").boolValue = false;
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherFiltering").boolValue = false; // Denoising
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherRayCount").intValue = 128;
 		}
 
-		static public void GoodFinalGather(SerializedObject lightmapSettings) {
+		public static void GoodFinalGather(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGather").boolValue = true;
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherFiltering").boolValue = true; // Denoising
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherRayCount").intValue = 512;
@@ -187,7 +187,7 @@ namespace Reification {
 		public const string goodParametersPath = "Assets/Reification/AutoImport/Settings/GoodLightmaps.giparams";
 
 		// Reference Enlighten RTGI parameters
-		static public void SetLightmapParameters(SerializedObject lightmapSettings, LightmapParameters lightmapParameters) {
+		public static void SetLightmapParameters(SerializedObject lightmapSettings, LightmapParameters lightmapParameters) {
 			// QUESTION: Could the parameter fields be directly embedded in the scene instead?
 			// https://forum.unity.com/threads/access-lighting-window-properties-in-script.328342/#post-3320725
 			// m_LightmapEditorSettings with child field m_LightmapParameters is an object reference to a .giparams file
@@ -196,9 +196,9 @@ namespace Reification {
 		}
 
 		// Configure scene for lightmap baking
-		static public void ConfigureLightmaps(Scene scene, LightmapBakeMode lightmapBakeMode = LightmapBakeMode.none) {
-		// TODO: Merge these with the serialized object editing below
-		Lightmapping.giWorkflowMode = Lightmapping.GIWorkflowMode.OnDemand;
+		public static void ConfigureLightmaps(Scene scene, LightmapBakeMode lightmapBakeMode = LightmapBakeMode.none) {
+			// TODO: Merge these with the serialized object editing below
+			Lightmapping.giWorkflowMode = Lightmapping.GIWorkflowMode.OnDemand;
 			LightmapEditorSettings.lightmapper = LightmapEditorSettings.Lightmapper.Enlighten;
 			LightmapEditorSettings.lightmapsMode = LightmapsMode.CombinedDirectional;
 			Lightmapping.realtimeGI = true;

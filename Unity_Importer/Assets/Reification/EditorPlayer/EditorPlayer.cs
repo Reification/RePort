@@ -358,7 +358,7 @@ namespace Reification {
 		/// <param name="assetPath">Path relative to persistent folder where asset will be created</param>
 		/// <param name="assetSuffix">Optional override of default suffix for asset type</param>
 		/// <returns>The asset copy, or the origin of AssetDatabase has not been updated</returns>
-		static public T CopyAssetToPath<T>(T asset, string assetPath, string assetSuffix = null) where T : Object {
+		public static T CopyAssetToPath<T>(T asset, string assetPath, string assetSuffix = null) where T : Object {
 			// Ensure that the asset path folders exist
 			EP.CreatePersistentPath(assetPath);
 			T assetCopy = null;

@@ -40,7 +40,7 @@ namespace Reification {
 			foreach(var selection in selectionList) ApplyTo(selection);
 		}
 
-		static public void ApplyTo(GameObject gameObject, string searchRoot = null) {
+		public static void ApplyTo(GameObject gameObject, string searchRoot = null) {
 			if(searchRoot == null) {
 				searchRoot = AssetDatabase.GetAssetOrScenePath(gameObject);
 				searchRoot = searchRoot.Substring(0, searchRoot.LastIndexOf('/'));
@@ -51,7 +51,7 @@ namespace Reification {
 			}
 		}
 
-		static public void SplitPathName(string pathname, out string path, out string name, out string type) {
+		public static void SplitPathName(string pathname, out string path, out string name, out string type) {
 			path = "";
 			var path_split = pathname.LastIndexOf('/');
 			if(-1 < path_split) path = pathname.Substring(0, path_split);
@@ -116,7 +116,7 @@ namespace Reification {
 		/// WARNING: Collisions are still possible dues to the '=' removal. This can be prevented by
 		/// ensuring that this character does not appear in the object or prefab name parts.
 		/// </remarks>
-		static public string ConfigureName(string name) => name.Trim('=').Replace('=', '-');
+		public static string ConfigureName(string name) => name.Trim('=').Replace('=', '-');
 
 		// Model export generates meshes in world coordinates
 		// In order to retain information, each prefab is replaced with a transformed tetrahedron
