@@ -132,7 +132,7 @@ namespace Reification {
 			EP.SetParent(gameObject.transform, light.transform.parent);
 			gameObject.transform.localPosition = light.transform.localPosition;
 			gameObject.transform.localRotation = light.transform.localRotation;
-			var areaLight = gameObject.AddComponent<Light>();
+			var areaLight = EP.AddComponent<Light>(gameObject);
 			areaLight.lightmapBakeType = LightmapBakeType.Baked;
 			areaLight.type = LightType.Rectangle;
 			areaLight.areaSize = areaSize;
