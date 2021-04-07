@@ -67,6 +67,13 @@ namespace Reification {
 		static int ProxyResolution(float spaceRatio) => Mathf.ClosestPowerOfTwo(Mathf.FloorToInt(Mathf.Clamp(spaceRatio, 2f, 32f)));
 
 		public static LightProbeProxyVolume ConfigureProxyVolume(LODGroup lodGroup) {
+			// Only lower levels of detail will use probes
+			var lods = lodGroup.GetLODs();
+			if(lods.Length < 2) return null;
+
+			// IDEA: Proxy volume updates are controlled by script
+			// IDEA: Reduce proxy volume resolution based on level of detail
+
 			// FIXME: Local bounds are needed
 			var worldBounds = RendererWorldBounds(lodGroup.gameObject);
 			// TEMP: Assume that only axis swaps pertain
@@ -103,7 +110,6 @@ namespace Reification {
 			}
 
 			// Configure all lower levels of detail to use probes
-			var lods = lodGroup.GetLODs();
 			for(var l = 1; l < lods.Length; ++l) {
 				foreach(var renderer in lods[l].renderers) {
 					renderer.lightProbeUsage = useProxy ? UnityEngine.Rendering.LightProbeUsage.UseProxyVolume : UnityEngine.Rendering.LightProbeUsage.BlendProbes;
