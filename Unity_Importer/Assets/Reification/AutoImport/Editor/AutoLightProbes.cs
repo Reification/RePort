@@ -36,32 +36,102 @@ namespace Reification {
 		}
 
 		public static void ApplyTo(GameObject gameObject) {
-			var probeGroupList = gameObject.GetComponentsInChildren<LightProbeGroup>();
-			if(probeGroupList.Length > 1) {
-				Debug.LogWarning($"AutoLightProbes {gameObject.Path()} contains {probeGroupList.Length} LightProbeGroup components -> select one group to reconfigure");
-				return;
+			// HERE: Apply to all LODGroups
+			var lodGroupList = gameObject.GetComponentsInChildren<LODGroup>();
+			foreach(var lodGroup in lodGroupList) ConfigureProxyVolume(lodGroup);
+
+			CreateLightProbes(gameObject);
+		}
+
+		public static Vector3 probeSpaces = new Vector3(0.5f, 0.5f, 0.5f); // meters between probes
+
+		// TODO: Move this to bounds extension.
+		/// <summary>
+		/// Get world bounds of all child renderers
+		/// </summary>
+		public static Bounds RendererWorldBounds(GameObject gameObject) {
+			var bounds = new Bounds();
+			var emptyBounds = true;
+			var objectRenderers = gameObject.GetComponentsInChildren<Renderer>();
+			foreach(var renderer in objectRenderers) {
+				if(emptyBounds) {
+					bounds = renderer.bounds;
+					emptyBounds = false;
+				} else {
+					bounds.Encapsulate(renderer.bounds);
+				}
+			}
+			return bounds;
+		}
+
+		static int ProxyResolution(float spaceRatio) => Mathf.ClosestPowerOfTwo(Mathf.FloorToInt(Mathf.Clamp(spaceRatio, 2f, 32f)));
+
+		public static LightProbeProxyVolume ConfigureProxyVolume(LODGroup lodGroup) {
+			// FIXME: Local bounds are needed
+			var worldBounds = RendererWorldBounds(lodGroup.gameObject);
+			// TEMP: Assume that only axis swaps pertain
+			var localBounds = new Bounds();
+			localBounds.center = lodGroup.transform.InverseTransformPoint(worldBounds.center);
+			localBounds.size = lodGroup.transform.InverseTransformDirection(worldBounds.size);
+			localBounds.size = new Vector3(Mathf.Abs(localBounds.size.x), Mathf.Abs(localBounds.size.y), Mathf.Abs(localBounds.size.z));
+
+			// If object bounds > probe spacing in any dimension use a proxy volume
+			var useProxy = false;
+			for(var i = 0; i < 3; ++i) useProxy |= localBounds.size[i] > probeSpaces[i];
+			var proxy = lodGroup.gameObject.GetComponent<LightProbeProxyVolume>();
+			if(useProxy) {
+				if(!proxy) proxy = EP.AddComponent<LightProbeProxyVolume>(lodGroup.gameObject);
+
+				// Configure proxy bounds
+				proxy.boundingBoxMode = LightProbeProxyVolume.BoundingBoxMode.Custom;
+				proxy.originCustom = localBounds.center;
+				proxy.sizeCustom = localBounds.size;
+
+				// Configure spacing
+				proxy.probePositionMode = LightProbeProxyVolume.ProbePositionMode.CellCorner;
+				proxy.resolutionMode = LightProbeProxyVolume.ResolutionMode.Custom;
+				proxy.gridResolutionX = ProxyResolution(localBounds.size.x / probeSpaces.x);
+				proxy.gridResolutionY = ProxyResolution(localBounds.size.y / probeSpaces.y);
+				proxy.gridResolutionZ = ProxyResolution(localBounds.size.z / probeSpaces.z);
+
+				// Remaining settings
+				proxy.qualityMode = LightProbeProxyVolume.QualityMode.Normal;
+				proxy.refreshMode = LightProbeProxyVolume.RefreshMode.Automatic;
+			} else {
+				if(proxy) EP.Destroy(proxy);
+				proxy = null;
 			}
 
-			LightProbeGroup probeGroup = null;
-			if(probeGroupList.Length == 1) {
-				probeGroup = probeGroupList[0];
-				Debug.Log($"AutoLightProbes is reconfiguring {probeGroup.Path()}.LightProbeGroup");
-			} else {
-				// Create new LightProbeGroup
-				var probeGroupObject = EP.Instantiate();
-				probeGroupObject.isStatic = true;
-				probeGroupObject.name = gameObject.name + "_Probes";
-				probeGroup = EP.AddComponent<LightProbeGroup>(probeGroupObject);
-				EP.SetParent(probeGroupObject.transform, gameObject.transform);
-				// Light probe positions are derived relative to gameObject
-				// and are evaluated relative to LightProbeGroup
-				// https://docs.unity3d.com/ScriptReference/LightProbeGroup-probePositions.html
-				probeGroupObject.transform.localPosition = Vector3.zero;
-				probeGroupObject.transform.localRotation = Quaternion.identity;
-				probeGroupObject.transform.localScale = Vector3.one;
+			// Configure all lower levels of detail to use probes
+			var lods = lodGroup.GetLODs();
+			for(var l = 1; l < lods.Length; ++l) {
+				foreach(var renderer in lods[l].renderers) {
+					renderer.lightProbeUsage = useProxy ? UnityEngine.Rendering.LightProbeUsage.UseProxyVolume : UnityEngine.Rendering.LightProbeUsage.BlendProbes;
+					renderer.lightProbeProxyVolumeOverride = lodGroup.gameObject;
+
+					var meshRender = renderer as MeshRenderer;
+					if(!meshRender) continue;
+					meshRender.receiveGI = ReceiveGI.LightProbes;
+				}
 			}
+
+			return proxy;
+		}
+
+		// TODO: Probe layout should be in local coordinates of GameObject
+
+		public static LightProbeGroup CreateLightProbes(GameObject gameObject) {
+			// Light probe positions are evaluated relative to LightProbeGroup
+			// https://docs.unity3d.com/ScriptReference/LightProbeGroup-probePositions.html
+			var group = gameObject.GetComponent<LightProbeGroup>();
+			if(!group) group = EP.AddComponent<LightProbeGroup>(gameObject);
+
+			// IDEA: Find child LightProbeGroups and exclude probes in those volumes
+			// This would enable adjusting the probe density in different areas.
+
 			// TODO: Enable configuration to use other placement strategies
-			probeGroup.probePositions = LightProbeGrid(gameObject, probeSpaces);
+			group.probePositions = LightProbeGrid(gameObject, probeSpaces);
+			return group;
 		}
 
 		public static RaycastHit[] RaycastLine(Vector3 origin, Vector3 ending, int layerMask = Physics.DefaultRaycastLayers, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.Ignore) {
@@ -124,8 +194,6 @@ namespace Reification {
 			return probeState;
 		}
 
-		public static Vector3 probeSpaces = new Vector3(0.5f, 1f, 0.5f); // Modify as needed
-
 		static Vector3 ProbesOrigin(Bounds bounds) {
 			var origin = Vector3.zero;
 			for(int i = 0; i < 3; ++i) {
@@ -157,20 +225,7 @@ namespace Reification {
 		/// <param name="gameObject">Object to be enveloped in probes</param>
 		/// <param name="probeSpaces">Spacing of probe grid</param>
 		public static Vector3[] LightProbeGrid(GameObject gameObject, Vector3 probeSpaces) {
-			// Get gameObject bounds
-			// TODO: Move this to bounds extension.
-			var emptyBounds = true;
-			var worldBounds = new Bounds();
-			var objectRenderers = gameObject.GetComponentsInChildren<Renderer>();
-			foreach(var renderer in objectRenderers) {
-				if(emptyBounds) {
-					worldBounds = renderer.bounds;
-					emptyBounds = false;
-				} else {
-					worldBounds.Encapsulate(renderer.bounds);
-				}
-			}
-
+			var worldBounds = RendererWorldBounds(gameObject);
 			var worldOrigin = ProbesOrigin(worldBounds);
 			var probePointList = new List<Vector3>();
 			var point = Vector3.zero;
