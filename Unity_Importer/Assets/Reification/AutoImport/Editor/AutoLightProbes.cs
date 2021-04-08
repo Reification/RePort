@@ -10,6 +10,8 @@ namespace Reification {
 	/// Adds light probes to manage illumination of levels of object detail
 	/// </summary>
 	/// <remarks>
+	/// Probe placement will need to be regenerated only if constituent objects are moved.
+	/// 
 	/// General information:
 	/// https://docs.unity3d.com/Manual/LightProbes.html
 	/// Application to lower levels of detail:
@@ -19,7 +21,7 @@ namespace Reification {
 	/// </remarks>
 	public class AutoLightProbes {
 		const string menuItemName = "Reification/Auto Light Probes";
-		const int menuItemPriority = 31;
+		const int menuItemPriority = 32;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
