@@ -1,16 +1,13 @@
 ﻿// Copyright 2021 Reification Incorporated
 // Licensed under Apache 2.0. All Rights reserved.
 
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 
 namespace Reification {
 	public class AutoLightSources {
 		const string menuItemName = "Reification/Auto Light Sources";
-		const int menuItemPriority = 30;
+		const int menuItemPriority = 33;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {

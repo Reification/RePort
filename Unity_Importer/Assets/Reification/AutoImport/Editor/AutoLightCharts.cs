@@ -14,7 +14,7 @@ namespace Reification {
 	/// </remarks>
 	public class AutoLightCharts: MonoBehaviour {
 		const string menuItemName = "Reification/Auto Light Charts";
-		const int menuItemPriority = 32;
+		const int menuItemPriority = 31;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
