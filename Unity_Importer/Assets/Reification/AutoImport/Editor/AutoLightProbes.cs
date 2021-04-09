@@ -21,7 +21,7 @@ namespace Reification {
 	/// </remarks>
 	public class AutoLightProbes {
 		const string menuItemName = "Reification/Auto Light Probes";
-		const int menuItemPriority = 32;
+		const int menuItemPriority = 31;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
@@ -40,7 +40,7 @@ namespace Reification {
 		public static void ApplyTo(GameObject gameObject) {
 			// HERE: Apply to all LODGroups
 			var lodGroupList = gameObject.GetComponentsInChildren<LODGroup>();
-			foreach(var lodGroup in lodGroupList) ConfigureProxyVolume(lodGroup);
+			foreach(var lodGroup in lodGroupList) ConfigureLODGroup(lodGroup);
 
 			CreateLightProbes(gameObject);
 		}
@@ -66,15 +66,22 @@ namespace Reification {
 			return bounds;
 		}
 
-		static int ProxyResolution(float spaceRatio) => Mathf.ClosestPowerOfTwo(Mathf.FloorToInt(Mathf.Clamp(spaceRatio, 2f, 32f)));
+		// PROBLEM: ProxyVolumes always update, even when the associated level of detail will not render
+		// IDEA: Proxy volume updates are controlled by script
+		// IDEA: Reduce proxy volume resolution based on level of detail
 
-		public static LightProbeProxyVolume ConfigureProxyVolume(LODGroup lodGroup) {
+		public static int ProxyResolution(float spaceRatio) => Mathf.ClosestPowerOfTwo(Mathf.FloorToInt(Mathf.Clamp(spaceRatio, 2f, 32f)));
+
+		/// <summary>
+		/// Configure the light probe proxy volume for lower levels of detail in group
+		/// </summary>
+		public static void ConfigureLODGroup(LODGroup lodGroup) {
+			// TODO: Check if group is static - if not, also configure the lowest level of detail.
+
 			// Only lower levels of detail will use probes
+			// IMPORTANT: Proxy volumes always update, so only generate them if they will be used.
 			var lods = lodGroup.GetLODs();
-			if(lods.Length < 2) return null;
-
-			// IDEA: Proxy volume updates are controlled by script
-			// IDEA: Reduce proxy volume resolution based on level of detail
+			if(lods.Length < 2) return;
 
 			// FIXME: Local bounds are needed
 			var worldBounds = RendererWorldBounds(lodGroup.gameObject);
@@ -122,8 +129,6 @@ namespace Reification {
 					meshRender.receiveGI = ReceiveGI.LightProbes;
 				}
 			}
-
-			return proxy;
 		}
 
 		// TODO: Probe layout should be in local coordinates of GameObject
