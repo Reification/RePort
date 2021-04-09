@@ -98,27 +98,34 @@ namespace Reification {
 			}
 		}
 
-		public static void ConvertToLightCharts(MeshRenderer meshRenderer, UnwrapParam unwrapParam, bool regenerate = false) {
-			var sharedMesh = meshRenderer.gameObject.GetComponent<MeshFilter>().sharedMesh;
-			if(!sharedMesh) return;
+		// TODO: Make this an extension
+		public static Mesh SharedMesh(MeshRenderer meshRenderer) {
+			var meshFilter = meshRenderer.gameObject.GetComponent<MeshFilter>();
+			if(!meshFilter) return null;
+			var sharedMesh = meshFilter.sharedMesh;
+			if(!sharedMesh) return null;
+			return sharedMesh;
+		}
 
+		public static void ConvertToLightCharts(MeshRenderer meshRenderer, UnwrapParam unwrapParam, bool regenerate = false) {
 			var staticFlags = GameObjectUtility.GetStaticEditorFlags(meshRenderer.gameObject);
 			staticFlags |= StaticEditorFlags.ContributeGI;
 			GameObjectUtility.SetStaticEditorFlags(meshRenderer.gameObject, staticFlags);
 			meshRenderer.receiveGI = ReceiveGI.Lightmaps;
 
+			var sharedMesh = SharedMesh(meshRenderer);
+			if(!sharedMesh) return;
 			if(regenerate || sharedMesh.uv2.Length == 0) Unwrapping.GenerateSecondaryUVSet(sharedMesh, unwrapParam);
 		}
 
 		public static void ConvertToLightProbes(MeshRenderer meshRenderer, bool keepUnused = false) {
-			var sharedMesh = meshRenderer.gameObject.GetComponent<MeshFilter>().sharedMesh;
-			if(!sharedMesh) return;
-
 			var staticFlags = GameObjectUtility.GetStaticEditorFlags(meshRenderer.gameObject);
 			staticFlags |= StaticEditorFlags.ContributeGI;
 			GameObjectUtility.SetStaticEditorFlags(meshRenderer.gameObject, staticFlags);
 			meshRenderer.receiveGI = ReceiveGI.LightProbes;
 
+			var sharedMesh = SharedMesh(meshRenderer);
+			if(!sharedMesh) return;
 			if(!keepUnused && sharedMesh.uv2.Length != 0) sharedMesh.uv2 = new Vector2[0];
 		}
 	}
