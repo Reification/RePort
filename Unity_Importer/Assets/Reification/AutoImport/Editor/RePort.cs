@@ -199,10 +199,8 @@ namespace Reification {
 		/// may be physics instead of rendered.
 		/// </remarks>
 		public static void MeshesImporter(ModelImporter modelImporter) {
-			modelImporter.generateSecondaryUV = true;
-			// CRITICAL: Generation after meshes are extracted is not possible
-			// WARNING: Lightmap UV generation is very slow
-			// https://docs.unity3d.com/Manual/LightingGiUvs-GeneratingLightmappingUVs.html
+			// Lightmaps will be generated as needed after mesh extraction
+			modelImporter.generateSecondaryUV = false;
 
 			modelImporter.importLights = false;
 			modelImporter.importCameras = false;

@@ -9,11 +9,14 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 
 namespace Reification {
+	/// <summary>
+	/// Generates baked lighting for selected scenes
+	/// </summary>
 	public class AutoLightmaps {
 		const string menuItemFastName = "Reification/Fast Lightmaps";
-		const int menuItemFastPriority = 32;
+		const int menuItemFastPriority = 34;
 		const string menuItemGoodName = "Reification/Good Lightmaps";
-		const int menuItemGoodPriority = 33;
+		const int menuItemGoodPriority = 35;
 
 		[MenuItem(menuItemFastName, validate = true, priority = menuItemFastPriority)]
 		[MenuItem(menuItemGoodName, validate = true, priority = menuItemGoodPriority)]
@@ -103,12 +106,13 @@ namespace Reification {
 			}
 		}
 
-		// QUESTION: Should lower levels of detail have different lightmap settings?
+		// QUESTION: Should individual objects have different lightmap settings?
 		// OPTION: Terrain scale=0 (see hover pop-up), or is non-static with mesh marked as contributing-only
 		// OPTION: Scale relative to object size, and keep lower levels of detail increased?
 
-		// TODO: Create utility class for complete lighting configuration.
+		// TODO: Create utility class to save, load and apply complete lighting configuration.
 		// Provide named default accessors for bake modes.
+		// TODO: Include Unity's defaults.
 
 		public enum LightmapBakeMode {
 			none = 0, // Make no changes

@@ -94,8 +94,9 @@ namespace Reification {
 					foreach(var light in gameObject.GetComponentsInChildren<Light>()) SetLightRange(sceneBounds, light);
 					// TODO: Hook for intensity adjustment based on light target
 
-					AutoLightSources.ApplyTo(gameObject);
+					AutoLightCharts.ApplyTo(gameObject);
 					AutoLightProbes.ApplyTo(gameObject);
+					AutoLightSources.ApplyTo(gameObject);
 					// TODO: Hook for Reflection probes, Acoustic probes...
 				}
 

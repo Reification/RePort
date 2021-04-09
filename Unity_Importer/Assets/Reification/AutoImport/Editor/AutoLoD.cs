@@ -11,10 +11,12 @@ namespace Reification {
 	/// </summary>
 	/// <remarks>
 	/// This modifies the model by removing any repeated levels of detail.
-	/// It also modifies associated materials to enable fading between detal levels.
+	/// Ihis modifies associated materials to enable fading between detal levels.
+	/// 
 	/// Applying this to an existing model will update all LODGroup components and all materials.
 	/// Applying this to a model with an added detail level will merge those detail components
 	/// into existing LODGroups.
+	/// 
 	/// Non MeshRenderers are supported, provided they have a sibling MeshFilter 
 	/// with a vertex count > 0 determining the relative detail.
 	/// </remarks>
