@@ -7,7 +7,7 @@ using UnityEditor;
 namespace Reification {
 	public class AutoLightSources {
 		const string menuItemName = "Reification/Auto Light Sources";
-		const int menuItemPriority = 33;
+		const int menuItemPriority = 34;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
