@@ -21,7 +21,7 @@ namespace Reification {
 	/// </remarks>
 	public class AutoLightProbes {
 		const string menuItemName = "Reification/Auto Light Probes";
-		const int menuItemPriority = 32;
+		const int menuItemPriority = 33;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
@@ -38,12 +38,18 @@ namespace Reification {
 		}
 
 		public static void ApplyTo(GameObject gameObject) {
-			// HERE: Apply to all LODGroups
+			// NOTE: Proxy volumes can be created and configured as prefab overrides,
+			// so the prefab does NOT need to be opened for editing
 			var lodGroupList = gameObject.GetComponentsInChildren<LODGroup>();
 			foreach(var lodGroup in lodGroupList) ConfigureLODGroup(lodGroup);
 
+			// NOTE: Light Probe Group can be created and configured as prefab overrides,
+			// so the prefab does NOT need to be opened for editing
 			CreateLightProbes(gameObject);
 		}
+
+		// IDEA: Probes spaces should be relative to light-map detail.
+		// So probe grid should be regenerated when configuring lighting.
 
 		public static Vector3 probeSpaces = new Vector3(0.5f, 0.5f, 0.5f); // meters between probes
 
@@ -131,8 +137,6 @@ namespace Reification {
 			}
 		}
 
-		// TODO: Probe layout should be in local coordinates of GameObject
-
 		public static LightProbeGroup CreateLightProbes(GameObject gameObject) {
 			// Light probe positions are evaluated relative to LightProbeGroup
 			// https://docs.unity3d.com/ScriptReference/LightProbeGroup-probePositions.html
@@ -217,8 +221,7 @@ namespace Reification {
 			return origin;
 		}
 
-		// TODO: Configure proxy volumes for objects that exceed probe lighting and exceed probe spacing size
-		// This is important for curved building surfaces that receive varying indirect light.
+		// TODO: Probe layout should be in local coordinates of GameObject
 
 		// IDEA: In the absence of visible dynamic object, probes only provides illumination to lower LoD objects.
 		// Consequently, if a probe does not provide lighting information for any lower levels of detail it could be removed.
@@ -226,8 +229,7 @@ namespace Reification {
 
 		// IDEA: When light probes all touch one large object, decimate probes acording to object scale in lightmap.
 		// TODO: This requires downscaling large object lightmaps (or even partitioning the objects)
-		// In particular, terrain will contribute to lightmap, but will have a scale of 0,
-		// so it will not receive lightmapping itself.
+		// NOTE: Large objects are converted to contributing with probes off.
 
 		/// <summary>
 		/// Generate a grid of probe points adjacent to surfaces

@@ -60,6 +60,10 @@ namespace Reification {
 			placeholder.position = origin;
 
 			// Remove meshes from placeholders
+			// IMPORTANT: MeshRenderers must also be removed, in order to avoid
+			// the application of renderer configations that could modify or remove the placeholder.
+			var meshRenderer = meshFilter.GetComponent<MeshRenderer>();
+			if(meshRenderer) EP.Destroy(meshRenderer);
 			EP.Destroy(meshFilter);
 		}
 

@@ -8,7 +8,7 @@ using UnityEditor;
 namespace Reification {
 	public class MergeModels : MonoBehaviour {
 		const string menuItemName = "Reification/Merge Models";
-		const int menuItemPriority = 21;
+		const int menuItemPriority = 20;
 
 		// IDEA: When this is applied to a directory instead of a GameObject
 		// search the directory for prefabs to merge and create a merged output
@@ -30,7 +30,7 @@ namespace Reification {
 		[MenuItem(menuItemName, priority = menuItemPriority)]
 		static private void Execute() {
 			Undo.IncrementCurrentGroup();
-			Undo.SetCurrentGroupName("Gather Assets");
+			Undo.SetCurrentGroupName("Merge Models");
 
 			// Merge target is first selected GameObject
 			var mergeTarget = Selection.activeGameObject;

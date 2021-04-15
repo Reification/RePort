@@ -14,9 +14,9 @@ namespace Reification {
 	/// </summary>
 	public class AutoLightmaps {
 		const string menuItemFastName = "Reification/Fast Lightmaps";
-		const int menuItemFastPriority = 34;
+		const int menuItemFastPriority = 35;
 		const string menuItemGoodName = "Reification/Good Lightmaps";
-		const int menuItemGoodPriority = 35;
+		const int menuItemGoodPriority = 36;
 
 		[MenuItem(menuItemFastName, validate = true, priority = menuItemFastPriority)]
 		[MenuItem(menuItemGoodName, validate = true, priority = menuItemGoodPriority)]

@@ -16,7 +16,7 @@ namespace Reification {
 	/// </remarks>
 	public class ReplacePrefabs {
 		const string menuItemName = "Reification/Replace Prefabs";
-		const int menuItemPriority = 20;
+		const int menuItemPriority = 21;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		static private bool Validate() {
