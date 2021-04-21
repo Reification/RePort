@@ -5,18 +5,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
-// TODO: DO NOT MODIFY when references are already gathered
-// https://docs.microsoft.com/en-us/dotnet/csharp/programming-guide/statements-expressions-operators/how-to-test-for-reference-equality-identity
-// NOTE: More simply: compare asset GUID
-
-// TODO: Replacement rules: materials should persist from existing assets,
-// Meshes should update on new assets...
-
-// TODO: It should be possible to specify whether prefabs are copied (and likewise for other assets)
-
-// DECISION: Avoid name collisions: assume each prefab is independent in terms of materials, meshes, textures...
-// GOAL: Constituent prefab arrangement and subdirectories should match model importing.
-
 namespace Reification {
 	/// <summary>
 	/// Gather assets associated with a model by creating and using copies
@@ -110,7 +98,7 @@ namespace Reification {
 		}
 
 		public class TextureGatherer {
-			const string textureFolder = "Textures";
+			public const string textureFolder = "Textures";
 			string texturePath;
 			public Dictionary<string, Texture> textureAssets = new Dictionary<string, Texture>();
 
@@ -119,8 +107,13 @@ namespace Reification {
 				if(EP.CreatePersistentPath(texturePath.Substring("Assets/".Length), false) > 0) return;
 				var textureGUIDs = AssetDatabase.FindAssets("t:Texture", new[] { texturePath });
 				foreach(var guid in textureGUIDs) {
-					var asset = AssetDatabase.LoadAssetAtPath<Texture>(AssetDatabase.GUIDToAssetPath(guid));
-					textureAssets.Add(asset.name, asset);
+					var assetPath = AssetDatabase.GUIDToAssetPath(guid);
+					var texture = AssetDatabase.LoadAssetAtPath<Texture>(assetPath);
+					if(textureAssets.ContainsKey(texture.name)) {
+						Debug.LogWarning($"TextureGatherer repeated asset name: {texture.name} at {assetPath} in {texturePath}");
+						continue;
+					}
+					textureAssets.Add(texture.name, texture);
 				}
 			}
 
@@ -157,7 +150,7 @@ namespace Reification {
 		}
 
 		public class MaterialGatherer {
-			const string materialFolder = "Materials";
+			public const string materialFolder = "Materials";
 			string materialPath;
 			public Dictionary<string, Material> materialAssets = new Dictionary<string, Material>();
 
@@ -166,8 +159,13 @@ namespace Reification {
 				if(EP.CreatePersistentPath(materialPath.Substring("Assets/".Length), false) > 0) return;
 				var materialGUIDs = AssetDatabase.FindAssets("t:Material", new[] { materialPath });
 				foreach(var guid in materialGUIDs) {
-					var asset = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
-					materialAssets.Add(asset.name, asset);
+					var assetPath = AssetDatabase.GUIDToAssetPath(guid);
+					var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+					if(materialAssets.ContainsKey(material.name)) {
+						Debug.LogWarning($"MaterialGatherer repeated asset name: {material.name} at {assetPath} in {materialPath}");
+						continue;
+					}
+					materialAssets.Add(material.name, material);
 				}
 			}
 
@@ -205,7 +203,7 @@ namespace Reification {
 		}
 
 		public class MeshGatherer {
-			const string meshFolder = "Meshes";
+			public const string meshFolder = "Meshes";
 			string meshPath;
 			public Dictionary<string, Dictionary<int, Mesh>> meshAssets = new Dictionary<string, Dictionary<int, Mesh>>();
 
@@ -229,9 +227,14 @@ namespace Reification {
 				if(EP.CreatePersistentPath(meshPath.Substring("Assets/".Length), false) > 0) return;
 				var meshGUIDs = AssetDatabase.FindAssets("t:Mesh", new[] { meshPath });
 				foreach(var guid in meshGUIDs) {
-					var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(AssetDatabase.GUIDToAssetPath(guid));
+					var assetPath = AssetDatabase.GUIDToAssetPath(guid);
+					var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
 					reduceMeshName(mesh);
 					if(!meshAssets.ContainsKey(mesh.name)) meshAssets.Add(mesh.name, new Dictionary<int, Mesh>());
+					if(meshAssets[mesh.name].ContainsKey(mesh.vertexCount)) {
+						Debug.LogWarning($"MeshGatherer repeated asset name: {mesh.name}({mesh.vertexCount}) at {assetPath} in {meshPath}");
+						continue;
+					}
 					meshAssets[mesh.name][mesh.vertexCount] = mesh;
 				}
 			}
@@ -275,7 +278,7 @@ namespace Reification {
 		// PROBLEM: Custom prefabs with scripts (e.g. SpeedTree) might not work.
 
 		public class PrefabGatherer {
-			const string prefabFolder = "Prefabs";
+			public const string prefabFolder = "Prefabs";
 			string prefabPath;
 			public Dictionary<string, GameObject> prefabAssets = new Dictionary<string, GameObject>();
 

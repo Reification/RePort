@@ -53,7 +53,6 @@ namespace Reification {
 		public static void ApplyTo(GameObject mergeTarget, params GameObject[] mergeSources) {
 			using(var editScope = new EP.EditGameObject(mergeTarget)) {
 				var targetEdit = editScope.editObject;
-				if(!targetEdit) return;
 				foreach(var mergeSource in mergeSources) {
 					using(var copyScope = new EP.CopyGameObject(mergeSource)) {
 						var sourceCopy = copyScope.copyObject;
