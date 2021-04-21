@@ -15,17 +15,23 @@ namespace Reification {
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		[MenuItem(gameObjectMenuName, validate = true, priority = gameObjectMenuPriority)]
 		private static bool Validate() {
+			if(!EP.useEditorAction) return false;
 			return Selection.gameObjects.Length > 0;
 		}
 
 		[MenuItem(menuItemName, validate = false, priority = menuItemPriority)]
 		[MenuItem(gameObjectMenuName, validate = false, priority = gameObjectMenuPriority)]
 		private static void Execute() {
+			// WARNING: Scene cannot be marked dirty during play
+			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+			Undo.IncrementCurrentGroup();
+			Undo.SetCurrentGroupName("Mesh/Add Backside");
+
 			var selectionList = Selection.gameObjects;
-			foreach(var selection in selectionList) ApplyAt(selection);
+			foreach(var selection in selectionList) SearchAt(selection);
 		}
 
-		public static void ApplyAt(GameObject gameObject) {
+		public static void SearchAt(GameObject gameObject) {
 			// Selection in a scene will identify only one detail version of an object
 			// However, the transformation should be applied to all versions
 			var lodGroup = gameObject.GetComponentInParent<LODGroup>();
@@ -38,10 +44,7 @@ namespace Reification {
 		}
 
 		public static void ApplyTo(GameObject gameObject) {
-			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-			Undo.IncrementCurrentGroup();
-			Undo.SetCurrentGroupName("Mesh/Add Backside");
-
+			// WARNING: Attempting to add backsides to meshes during play yields "Invalid AABB" errors
 			var meshFilter = gameObject.GetComponent<MeshFilter>();
 			if(!meshFilter) return;
 			var sharedMesh = meshFilter.sharedMesh;
