@@ -13,6 +13,8 @@ namespace Reification {
 	/// A placeholder is an empty transform with a name that identifies the corresponding prefab.
 	/// Using placeholders, a model exporter can describe each referentially instantiated constituent as a
 	/// separate model file, with the constituent becoming a prefab on import.
+	/// If no prefab is found an empty prefab will be created with the expected path and name, 
+	/// to ensure that the object correspondance is maintained.
 	/// </remarks>
 	public class ReplacePrefabs {
 		const string menuItemName = "Reification/Replace Prefabs";
@@ -70,6 +72,12 @@ namespace Reification {
 				var pathname = AssetDatabase.GUIDToAssetPath(guid);
 				SplitPathName(pathname, out _path, out _name, out _type);
 				_prefab = null;
+			}
+
+			public CachedPrefab(GameObject asset) {
+				var pathname = AssetDatabase.GetAssetPath(asset);
+				SplitPathName(pathname, out _path, out _name, out _type);
+				_prefab = asset;
 			}
 
 			string _type;
@@ -141,21 +149,18 @@ namespace Reification {
 				var name_parts = child.name.Split('=');
 				if(name_parts.Length == 1) continue;
 
-				CachedPrefab cached = null;
-				if(prefabs.ContainsKey(name_parts[0])) {
-					cached = prefabs[name_parts[0]];
-				} else {
+				// Create an placeholder prefab that can be modified after import
+				if(!prefabs.ContainsKey(name_parts[0])) {
 					var placeholder = EP.Instantiate();
 					placeholder.name = name_parts[0];
 					var placeholderPath = prefabPath + "/" + placeholder.name + ".prefab";
-					var asset = PrefabUtility.SaveAsPrefabAsset(placeholder, placeholderPath);
-					var guid = AssetDatabase.AssetPathToGUID(placeholderPath);
-					cached = new CachedPrefab(guid);
-					prefabs[name_parts[0]] = cached;
+					var placeholderAsset = PrefabUtility.SaveAsPrefabAsset(placeholder, placeholderPath);
+					prefabs[name_parts[0]] = new CachedPrefab(placeholderAsset);
 					EP.Destroy(placeholder);
-					Debug.LogWarning($"Missing prefab in {gameObject.name} for {child.Path()} -> created placeholder");
+					//Debug.Log($"Missing prefab in {gameObject.name} for {child.Path()} -> created placeholder");
 				}
-				ConfigurePrefab(child.transform, cached);
+
+				ConfigurePrefab(child.transform, prefabs[name_parts[0]]);
 				EP.Destroy(child);
 			}
 		}
