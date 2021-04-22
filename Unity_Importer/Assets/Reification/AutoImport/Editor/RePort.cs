@@ -541,21 +541,10 @@ namespace Reification {
 			try {
 				AssetDatabase.StartAssetEditing();
 				foreach(var model in completeModels) {
+					// IMPORTANT: All assets used by models are gathered inside an adjacent folders with the same name
 					var searchPath = AssetDatabase.GetAssetPath(model);
 					searchPath = searchPath.Substring(0, searchPath.Length - ".prefab".Length);
 
-					// IMPORTANT: Since prefabs are not copied after replacement, this ensures that the prefabs can be updated
-					// Assembled models will contain only prefabs in their associated folder
-					// Constituent models may contain other constituent models, so search should begin adjacent
-					var prefabPath = searchPath;
-					var isAssembledModel = !prefabPath.Substring(importPath.Length).Contains("/");
-					if(!isAssembledModel) prefabPath = prefabPath.Substring(0, prefabPath.LastIndexOf('/'));
-
-					// IMPORTANT: Prefab replacement must happen after merged assets are imported, but before assets are swapped
-					// in order to enable prefab gathering.
-					ReplacePrefabs.ApplyTo(model, prefabPath);
-
-					// FIXME: This search path should NOT be adjacent!
 					// Swap assets for copies created when combining partial models
 					// NOTE: Modifications will not alter original assets, since copies are now being used
 					var gatherer = new GatherAssets.AssetGatherer(searchPath);
@@ -566,13 +555,24 @@ namespace Reification {
 					AutoStatic.ApplyTo(model);
 					AutoColliders.ApplyTo(model);
 					//Debug.Log($"Configured prefab: {prefabPath}");
-
-					// Only create scenes from prefabs in RePort
-					if(isAssembledModel) assembledModels.Add(model);
 				}
 			} finally {
 				AssetDatabase.StopAssetEditing();
 				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+			}
+
+			// IMPORTANT: ReplacePrefabs needs to create placeholders, which cannot occur during AssetDatabase editing
+			foreach(var model in completeModels) {
+				// IMPORTANT: Assembled models will contain only prefabs inside an adjacent folder with the same name
+				// NOTE: Constituent models may contain other constituent models, so search should begin adjacent
+				var prefabPath = AssetDatabase.GetAssetPath(model);
+				prefabPath = prefabPath.Substring(0, prefabPath.Length - ".prefab".Length);
+				var isAssembledModel = !prefabPath.Substring(importPath.Length).Contains("/");
+				if(!isAssembledModel) prefabPath = prefabPath.Substring(0, prefabPath.LastIndexOf('/'));
+				ReplacePrefabs.ApplyTo(model, prefabPath);
+
+				// Only create scenes from prefabs in RePort
+				if(isAssembledModel) assembledModels.Add(model);
 			}
 		}
 
