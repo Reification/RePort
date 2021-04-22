@@ -45,21 +45,20 @@ namespace Reification {
 		/// <remarks>
 		/// When parent = null the search begins with the scene root.
 		/// </remarks>
-		public static GameObject[] PathFind(string path, Transform parent = null) {
-			var pathName = new PathName(path, PathName.PathStep.StepType.Path);
-			var transformList = pathName.Find(parent);
+		public static GameObject[] PathFind(PathName path, Transform parent = null) {
+			var transformList = path.Find(parent);
 			var gameObjectList = new List<GameObject>();
 			foreach(var transform in transformList) gameObjectList.Add(transform.gameObject);
 			return gameObjectList.ToArray();
 		}
 
 		/// <returns>an array of all GameObjects identified by path from this</returns>
-		public static GameObject[] PathFindInChildren(this Component component, string pathName) {
+		public static GameObject[] PathFindInChildren(this Component component, PathName pathName) {
 			return PathFind(pathName, component?.transform);
 		}
 
 		/// <returns>an array of all GameObjects identified by path from this</returns>
-		public static GameObject[] PathFindInChildren(this GameObject gameObject, string pathName) {
+		public static GameObject[] PathFindInChildren(this GameObject gameObject, PathName pathName) {
 			return PathFind(pathName, gameObject?.transform);
 		}
 
@@ -83,7 +82,7 @@ namespace Reification {
 
 			// Search by path
 			// IMPORTANT: PathName names begin with the name of a GameObject, so "/" is dropped
-			var path = new PathName(pathName.Substring(1), PathName.PathStep.StepType.Path);
+			var path = new PathName(pathName.Substring(1), PathName.PathStep.Step.Path);
 
 			var transformList = path.Find();
 			var gameObjectList = new List<GameObject>();

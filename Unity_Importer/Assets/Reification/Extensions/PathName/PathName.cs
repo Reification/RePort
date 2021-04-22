@@ -13,25 +13,30 @@ namespace Reification {
 	public class PathName : ICloneable {
 		[Serializable]
 		public class PathStep : ICloneable {
-			public string name; // Name of path entry
-			public enum StepType {
+			/// <summary>Name of path step</summary>
+			public string name;
+
+			public enum Step {
 				Path, // Can be partitioned when matching
 				Name // Must exctly match the name of an object
 			}
-			public StepType type; // Type of path entry
+
+			/// <summary>Type of path step</summary>
+			public Step step;
+
+			public PathStep(string name, Step step) {
+				this.name = name;
+				this.step = step;
+			}
 
 			/// <returns>Deep-copy yielding a independent instance of name</returns>
 			public object Clone() {
-				var step = new PathStep();
-				step.type = type;
-				step.name = name.Clone() as string;
-				return step;
+				return new PathStep(name.Clone() as string, step);
 			}
 		}
+
+		// Path from parent to child
 		public List<PathStep> path;
-		// QUESTION: Should this be an array?
-		// QUESTION: Should PathStep and path be protected?
-		// GUESS: It is expected to be invariant, so direct access & list manipulation are not needed
 
 		/// <summary>
 		/// Empty path identifies world
@@ -43,16 +48,16 @@ namespace Reification {
 		/// <summary>
 		/// Constructor for object path
 		/// </summary>
-		public PathName(GameObject gameObject) {
+		/// <param name="rootObject">Path ends when root object is reached</param>
+		public PathName(GameObject gameObject, GameObject rootObject = null) {
 			path = new List<PathStep>();
 			Transform parent = gameObject.transform;
-			while(parent) {
-				var step = new PathStep();
-				step.name = parent.name;
-				step.type = PathStep.StepType.Name;
-				path.Insert(0, step);
+			while(parent && parent != rootObject) {
+				var step = new PathStep(parent.name, PathStep.Step.Name);
+				path.Add(step);
 				parent = parent.parent;
 			}
+			path.Reverse();
 		}
 
 		/// <summary>
@@ -70,10 +75,8 @@ namespace Reification {
 		/// - name = "/" matches "" which is a child of ""
 		/// - name = "/" also matches "/" which is a root GameObject
 		/// </remarks>
-		public PathName(string name, PathStep.StepType type = PathStep.StepType.Path) {
-			var step = new PathStep();
-			step.name = name;
-			step.type = type;
+		public PathName(string name, PathStep.Step type = PathStep.Step.Path) {
+			var step = new PathStep(name, type);
 			path = new List<PathStep>();
 			path.Add(step);
 		}
@@ -82,7 +85,7 @@ namespace Reification {
 		public object Clone() {
 			var pathName = new PathName();
 			pathName.path = new List<PathStep>();
-			for(int p = 0; p < path.Count; ++p) pathName.path.Add(path[p].Clone() as PathStep);
+			foreach(var step in path) pathName.path.Add(step.Clone() as PathStep);
 			return pathName;
 		}
 
@@ -132,12 +135,12 @@ namespace Reification {
 				++same;
 			}
 
-			switch(lhs.path[0].type) {
-			case PathStep.StepType.Name:
+			switch(lhs.path[0].step) {
+			case PathStep.Step.Name:
 				if(same < lhs.path[0].name.Length) return false;
 				lhs.path.RemoveAt(0); // Recurse by reduction
 				break;
-			case PathStep.StepType.Path:
+			case PathStep.Step.Path:
 				if(same < lhs.path[0].name.Length) {
 					if(lhs.path[0].name[same] != '/') return false;
 					lhs.path[0].name = lhs.path[0].name.Substring(same + 1); // Recurse by partition
@@ -146,12 +149,12 @@ namespace Reification {
 				lhs.path.RemoveAt(0); // Recurse by reduction
 				break;
 			}
-			switch(rhs.path[0].type) {
-			case PathStep.StepType.Name:
+			switch(rhs.path[0].step) {
+			case PathStep.Step.Name:
 				if(same < rhs.path[0].name.Length) return false;
 				rhs.path.RemoveAt(0); // Recurse by reduction
 				break;
-			case PathStep.StepType.Path:
+			case PathStep.Step.Path:
 				if(same < rhs.path[0].name.Length) {
 					if(rhs.path[0].name[same] != '/') return false;
 					rhs.path[0].name = rhs.path[0].name.Substring(same + 1); // Recurse by partition
@@ -178,7 +181,7 @@ namespace Reification {
 			foreach(var childItem in childList) {
 				// Evaluate match
 				var lhsRecurse = Clone() as PathName;
-				var rhsRecurse = new PathName(childItem.name, PathStep.StepType.Name);
+				var rhsRecurse = new PathName(childItem.name, PathStep.Step.Name);
 				if(!MatchStep(lhsRecurse, rhsRecurse)) continue;
 				findList.AddRange(lhsRecurse.Find(childItem));
 			}
