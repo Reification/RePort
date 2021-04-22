@@ -133,21 +133,30 @@ namespace Reification {
 			Dictionary<string, CachedPrefab> prefabs = GetPrefabs(prefabPath);
 			var children = gameObject.Children(true);
 			foreach(var child in children) {
+				// Do not modify existing child prefabs
+				var childPrefab = PrefabUtility.GetNearestPrefabInstanceRoot(child);
+				if(childPrefab != null && childPrefab != gameObject) continue;
+
+				// Placeholder names are constructed as "prefab_name=object_name"
 				var name_parts = child.name.Split('=');
 				if(name_parts.Length == 1) continue;
-				if(prefabs.TryGetValue(name_parts[0], out var cached)) {
-					// When reimporting retain previous replacement if present
-					string replaceName = ConfigureName(child.name);
-					var replaceList = child.transform.parent.NameFindInChildren(replaceName);
-					// ASSUME: Each placeholder yields a unique configured name
-					if(replaceList.Length == 0) {
-						child.name = replaceName;
-						ConfigurePrefab(child.transform, cached);
-					}
-					EP.Destroy(child);
+
+				CachedPrefab cached = null;
+				if(prefabs.ContainsKey(name_parts[0])) {
+					cached = prefabs[name_parts[0]];
 				} else {
-					Debug.LogWarning($"Missing prefab for {gameObject.name} place holder {child.Path()}");
+					var placeholder = EP.Instantiate();
+					placeholder.name = name_parts[0];
+					var placeholderPath = prefabPath + "/" + placeholder.name + ".prefab";
+					var asset = PrefabUtility.SaveAsPrefabAsset(placeholder, placeholderPath);
+					var guid = AssetDatabase.AssetPathToGUID(placeholderPath);
+					cached = new CachedPrefab(guid);
+					prefabs[name_parts[0]] = cached;
+					EP.Destroy(placeholder);
+					Debug.LogWarning($"Missing prefab in {gameObject.name} for {child.Path()} -> created placeholder");
 				}
+				ConfigurePrefab(child.transform, cached);
+				EP.Destroy(child);
 			}
 		}
 	}
