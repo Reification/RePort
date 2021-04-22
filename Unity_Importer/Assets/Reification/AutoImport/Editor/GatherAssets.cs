@@ -274,67 +274,7 @@ namespace Reification {
 			}
 		}
 
-		// FIXME: Prefab gathering in case custom prefabs are used.
-		// PROBLEM: Custom prefabs with scripts (e.g. SpeedTree) might not work.
-
-		public class PrefabGatherer {
-			public const string prefabFolder = "Prefabs";
-			string prefabPath;
-			public Dictionary<string, GameObject> prefabAssets = new Dictionary<string, GameObject>();
-
-			public PrefabGatherer(string pathRoot) {
-				prefabPath = pathRoot + "/" + prefabFolder;
-				if(EP.CreatePersistentPath(prefabPath.Substring("Assets/".Length), false) > 0) return;
-				var prefabGUIDs = AssetDatabase.FindAssets("t:GameObject", new[] { prefabPath });
-				foreach(var guid in prefabGUIDs) {
-					var asset = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid));
-					if(!asset) {
-						Debug.LogWarning($"Created prefab {prefabPath} could not be loaded -> stop editing assets, then reconstruct PrefabGatherer");
-						continue;
-					}
-					prefabAssets.Add(asset.name, asset);
-				}
-			}
-
-			// Creates copies of all child prefabs
-			public void CopyPrefabs(GameObject gameObject) {
-				var children = gameObject.transform.Children();
-				foreach(var child in children) {
-					if(PrefabUtility.GetPrefabAssetType(child.gameObject) == PrefabAssetType.NotAPrefab) continue;
-					var prefab = PrefabUtility.GetCorrespondingObjectFromSource<GameObject>(child.gameObject);
-					if(prefabAssets.ContainsKey(prefab.name)) continue;
-					var copyPrefab = EP.CopyAssetToPath(prefab, prefabPath.Substring("Assets/".Length));
-					prefabAssets.Add(prefab.name, copyPrefab);
-				}
-			}
-
-			// Replaces all child prefabs with existing copies
-			public void SwapPrefabs(GameObject gameObject) {
-				var children = gameObject.transform.Children();
-				foreach(var child in children) {
-					if(PrefabUtility.GetPrefabAssetType(child.gameObject) == PrefabAssetType.NotAPrefab) continue;
-					var prefab = PrefabUtility.GetCorrespondingObjectFromSource<GameObject>(child.gameObject);
-					if(!prefabAssets.ContainsKey(prefab.name)) {
-						Debug.LogWarning($"Missing Prefab {prefab.name} from {prefabFolder}");
-						continue;
-					}
-					prefab = prefabAssets[prefab.name];
-					// Replace the child with instance of gathered prefab
-					var instance = EP.Instantiate(prefab).transform;
-					instance.name = child.name;
-					EP.SetParent(instance, child.parent);
-					instance.localPosition = child.localPosition;
-					instance.localRotation = child.localRotation;
-					instance.localScale = child.localScale;
-					// QUESTION: Is there a general way to transfer overrides?
-					// https://docs.unity3d.com/ScriptReference/PrefabUtility.GetObjectOverrides.html
-					EP.Destroy(child.gameObject);
-				}
-			}
-		}
-
 		public class AssetGatherer {
-			PrefabGatherer prefabGatherer;
 			MaterialGatherer materialGatherer;
 			TextureGatherer textureGatherer;
 			MeshGatherer meshGatherer;
@@ -342,13 +282,11 @@ namespace Reification {
 			public AssetGatherer(
 				string pathRoot
 			) {
-				prefabGatherer = new PrefabGatherer(pathRoot);
 				materialGatherer = new MaterialGatherer(pathRoot);
 				textureGatherer = new TextureGatherer(pathRoot);
 				meshGatherer = new MeshGatherer(pathRoot);
 			}
 
-			HashSet<string> copyPrefabs = new HashSet<string>();
 			HashSet<string> copyMaterials = new HashSet<string>();
 
 			public void CopyAssets(GameObject gameObject) {
@@ -370,17 +308,9 @@ namespace Reification {
 
 					var meshFilter = editObject.GetComponent<MeshFilter>();
 					if(meshFilter) meshGatherer.CopyMeshes(meshFilter);
-					/*
-					prefabGatherer.CopyPrefabs(editObject);
-					foreach(var prefab in prefabGatherer.prefabAssets.Values) {
-						if(copyPrefabs.Contains(prefab.name)) continue;
-						copyPrefabs.Add(prefab.name);
-						CopyAssets(prefab);
-					}*/
 				}
 			}
-
-			HashSet<string> swapPrefabs = new HashSet<string>();
+			
 			HashSet<string> swapMaterials = new HashSet<string>();
 
 			public void SwapAssets(GameObject gameObject) {
@@ -402,13 +332,6 @@ namespace Reification {
 
 					var meshFilter = editObject.GetComponent<MeshFilter>();
 					if(meshFilter) meshGatherer.SwapMeshes(meshFilter);
-					/*
-					prefabGatherer.SwapPrefabs(editObject);
-					foreach(var prefab in prefabGatherer.prefabAssets.Values) {
-						if(swapPrefabs.Contains(prefab.name)) continue;
-						swapPrefabs.Add(prefab.name);
-						SwapAssets(prefab);
-					}*/
 				}
 			}
 		}
