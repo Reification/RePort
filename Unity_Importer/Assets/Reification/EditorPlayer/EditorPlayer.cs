@@ -140,11 +140,13 @@ namespace Reification {
 		}
 
 		/// <summary>
-		/// Enable editing of a GameObject, even if the object is a prefab
+		/// Enable editing of a GameObject, even if the object is a prefab or is in a prefab
 		/// </summary>
 		/// <remarks>
 		/// Unity2019.4: Prefab editing is limited to creation and update of components and children.
 		/// Removal requires opening the prefab for editing.
+		/// When an object is a child of a prefab, the nearest parent prefab will be edited instead of
+		/// defining overrides or creating a variant.
 		/// </remarks>
 		public class EditGameObject : System.IDisposable {
 			/// <summary>
@@ -152,34 +154,33 @@ namespace Reification {
 			/// </summary>
 			public GameObject editObject { get; private set; }
 
-			GameObject gameObject;
+			GameObject rootObject;
 
 			public EditGameObject(GameObject gameObject) {
 				if(useEditorAction) {
 #if UNITY_EDITOR
-					switch(PrefabUtility.GetPrefabAssetType(gameObject)) {
-					case PrefabAssetType.NotAPrefab:
+					var prefab = PrefabUtility.GetNearestPrefabInstanceRoot(gameObject);
+					if(prefab) {
+						var path = new PathName(gameObject, prefab);
+						var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(prefab);
+						rootObject = PrefabUtility.LoadPrefabContents(prefabPath);
+						var editObjectList = rootObject.PathFindInChildren(path);
+						if(editObjectList.Length == 1) editObject = editObjectList[0];
+						// else: editObject == null
+						// NOTE: editObjectList.Length == 0 can occur if the name was changed
+						// while editObjectList.Length >= 2 can occur when siblings in the path have the same name
+					} else {
 						if(Application.isBatchMode) {
 							EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 						} else {
-							Undo.RecordObject(gameObject, $"Merge to {gameObject.name}");
+							Undo.RecordObject(gameObject, $"Edit {gameObject.name}");
 						}
 						editObject = gameObject;
-						break;
-					case PrefabAssetType.Regular:
-					case PrefabAssetType.Variant:
-						var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(gameObject);
-						editObject = PrefabUtility.LoadPrefabContents(prefabPath);
-						break;
-					default:
-						editObject = null;
-						break;
 					}
 #endif
 				} else {
 					editObject = gameObject;
 				}
-				this.gameObject = gameObject;
 			}
 
 			public void Dispose() {
@@ -187,21 +188,15 @@ namespace Reification {
 
 				if(useEditorAction) {
 #if UNITY_EDITOR
-					switch(PrefabUtility.GetPrefabAssetType(gameObject)) {
-					case PrefabAssetType.NotAPrefab:
+					if(rootObject) {
+						var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(rootObject);
+						PrefabUtility.SaveAsPrefabAsset(rootObject, prefabPath);
+						PrefabUtility.UnloadPrefabContents(rootObject);
+					} else {
 						if(Application.isBatchMode) {
 							EditorSceneManager.SaveOpenScenes();
-						} else {
-							Undo.RecordObject(gameObject, $"Merge to {gameObject.name}");
-							// User interaction - do not save
 						}
-						break;
-					case PrefabAssetType.Regular:
-					case PrefabAssetType.Variant:
-						var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(gameObject);
-						PrefabUtility.SaveAsPrefabAsset(editObject, prefabPath);
-						PrefabUtility.UnloadPrefabContents(editObject);
-						break;
+						// else: User interaction - do not save
 					}
 #endif
 				}
