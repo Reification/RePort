@@ -6,7 +6,7 @@ using UnityEngine;
 using UnityEditor;
 
 namespace Reification {
-	public class MergeModels : MonoBehaviour {
+	public class MergeModels {
 		const string menuItemName = "Reification/Merge Models";
 		const int menuItemPriority = 20;
 
@@ -34,6 +34,7 @@ namespace Reification {
 
 			// Merge target is first selected GameObject
 			var mergeTarget = Selection.activeGameObject;
+
 			// Merge sources are subsequently selected GameObjects
 			var mergeSources = new List<GameObject>();
 			foreach(var gameObject in Selection.gameObjects) {
@@ -41,13 +42,18 @@ namespace Reification {
 				mergeSources.Add(gameObject);
 			}
 			ApplyTo(mergeTarget, mergeSources.ToArray());
-
 			// View merged prefab
 			var prefabType = PrefabUtility.GetPrefabAssetType(mergeTarget);
 			if(
 				prefabType == PrefabAssetType.Regular ||
 				prefabType == PrefabAssetType.Variant
-			) PrefabUtility.LoadPrefabContents(AssetDatabase.GetAssetPath(mergeTarget));
+			) {
+				// NOTE: PrefabUtility.LoadPrefabContents(prefabPath) changes EditorSceneManager.previewSceneCount but not editor scene
+				// NOTE: PrefabUtility.LoadPrefabContentsIntoPreviewScene(prefabPath, EditorSceneManager.NewPreviewScene()) does not work
+				var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(mergeTarget);
+				var prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+				AssetDatabase.OpenAsset(prefabAsset);
+			}
 		}
 
 		public static void ApplyTo(GameObject mergeTarget, params GameObject[] mergeSources) {
