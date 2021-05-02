@@ -42,6 +42,7 @@ namespace Reification {
 				mergeSources.Add(gameObject);
 			}
 			ApplyTo(mergeTarget, mergeSources.ToArray());
+
 			// View merged prefab
 			var prefabType = PrefabUtility.GetPrefabAssetType(mergeTarget);
 			if(
@@ -60,15 +61,15 @@ namespace Reification {
 			using(var editScope = new EP.EditGameObject(mergeTarget)) {
 				var targetEdit = editScope.editObject;
 				foreach(var mergeSource in mergeSources) {
-					using(var copyScope = new EP.CopyGameObject(mergeSource)) {
-						var sourceCopy = copyScope.copyObject;
+					var sourceCopy = EP.Instantiate(mergeSource);
 
-						// Unpack only root model prefab, constituent prefab links will be retained
-						// NOTE: Applying UnpackPrefabInstance to a non-prefab object results in a crash
-						if(PrefabUtility.GetPrefabAssetType(sourceCopy) != PrefabAssetType.NotAPrefab)
-							PrefabUtility.UnpackPrefabInstance(sourceCopy, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
-						Merge(sourceCopy.transform, targetEdit.transform);
-					}
+					// Unpack only root model prefab, constituent prefab links will be retained
+					// NOTE: Applying UnpackPrefabInstance to a non-prefab object results in a crash
+					if(PrefabUtility.GetPrefabAssetType(sourceCopy) != PrefabAssetType.NotAPrefab)
+						PrefabUtility.UnpackPrefabInstance(sourceCopy, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
+					Merge(sourceCopy.transform, targetEdit.transform);
+
+					EP.Destroy(sourceCopy);
 				}
 			}
 		}
@@ -93,6 +94,7 @@ namespace Reification {
 		// then children will be randomly assigned. This could happen if Av0 has children,
 		// Av1 does not and is added, but then Av2 has children, which could be parented to
 		// either Av1 or Av0. Or, if the original model uses a name multiple times.
+		// TODO: Identify problem and warn.
 
 		static void Merge(Transform mergeFrom, Transform mergeTo) {
 			// When names match, merge
