@@ -52,7 +52,7 @@ namespace Reification {
 		public PathName(GameObject gameObject, GameObject rootObject = null) {
 			path = new List<PathStep>();
 			Transform parent = gameObject.transform;
-			while(parent && parent != rootObject) {
+			while(parent && parent != rootObject?.transform) {
 				var step = new PathStep(parent.name, PathStep.Step.Name);
 				path.Add(step);
 				parent = parent.parent;
@@ -167,11 +167,19 @@ namespace Reification {
 			return true;
 		}
 
+		// TODO: Find should identify unique instance
+		// TODO: Check if path is unique for object (with optional root)
+		// TODO: Implement forcing of unique name for GameObject
+		// - Rename GameObject
+		// - Rename all identically named siblings
+
+		// TODO: This should return GameObjects
+
 		/// <returns>the GameObjects specified by this path relative to parent</returns>
 		/// <remarks>
 		/// If the path matches no GameObjects the returned array will be empty.
-		/// An empty path matches world, which will return { null }
-		/// A null parent matches world.
+		/// An empty path matches parent.
+		/// A null parent matches active scene.
 		/// </remarks>
 		public Transform[] Find(Transform parent = null) {
 			if(path.Count == 0) return new Transform[] { parent };
