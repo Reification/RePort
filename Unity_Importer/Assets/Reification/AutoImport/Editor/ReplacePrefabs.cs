@@ -101,11 +101,14 @@ namespace Reification {
 		static Dictionary<string, CachedPrefab> GetPrefabs(string searchRoot) {
 			var prefabs = new Dictionary<string, CachedPrefab>();
 
-			// FIXME: Only prefab assets should be included - FBX will have a similar name and should be ignored
 			var prefabGUIDs = AssetDatabase.FindAssets("t:GameObject", new[] { searchRoot });
 			foreach(var guid in prefabGUIDs) {
 				var cached = new CachedPrefab(guid);
 				if(cached.type != "prefab") continue;
+				if(prefabs.ContainsKey(cached.name)) {
+					Debug.LogWarning($"Repeated prefab key {cached.name} at {AssetDatabase.GUIDToAssetPath(guid)} and {prefabs[cached.name].path}");
+					continue;
+				}
 				prefabs.Add(cached.name, cached);
 			}
 

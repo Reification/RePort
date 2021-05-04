@@ -501,12 +501,12 @@ namespace Reification {
 				AssetDatabase.StartAssetEditing();
 				// Merge prefab consistuents and copy assets
 				// NOTE: If new constituents are added or updated they will be merged into existing model.
-				// NOTE: If additional replicated models are added they will replace locators
-				// in the merged model, even if the corresponding instances constituent was previously merged.
+				// NOTE: If additional prefabs are added they will replace placeholders
+				// in the merged model, which will persist through the merge and configure process.
 				foreach(var item in mergedPrefabs) {
 					if(partialModels.ContainsKey(item.Key)) MergeModels.ApplyTo(item.Value, partialModels[item.Key].ToArray());
 					// Assets will be gathered in folder adjacent to merged model
-					// IMPORTANT: Prefabs will maintain independent asset copies.
+					// IMPORTANT: Constituent prefabs will maintain independent asset copies.
 					var gatherer = new GatherAssets.AssetGatherer(item.Key);
 					gatherer.CopyAssets(item.Value);
 					completeModels.Add(item.Value);
@@ -517,6 +517,9 @@ namespace Reification {
 				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 			}
 		}
+
+		// TODO: Check for prefab existence when creating
+		// options are skip, version, or overwrite.
 
 		// Create an empty prefab adjacent to the merged asset folder
 		static void CreateMerged(string path, Dictionary<string, GameObject> mergedPrefabs) {
