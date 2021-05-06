@@ -141,7 +141,7 @@ def SaveSuffix():
 
 # Save options target export for rendering
 # NOTE: GeometryOnly=Yes would exclude BOTH cameras and lights
-# NOTE: Unrecognized commands are interpreted as filename!
+# WARNING: Unrecognized commands are interpreted as filename!
 # When running Rhino5 entering Version=6 saves "Version=6.3dm"
 def SaveOptions():
     # https://docs.mcneel.com/rhino/5/help/en-us/commands/save.htm
@@ -331,15 +331,17 @@ def ModelScale():
     if units == 25: scale = meter * 149597870700 * 648000 / 3.14159265358979323
     return scale
 
-# Zero vector (defines vector type as list)
+# Zero vector
 def ZeroVector():
-    return [0, 0, 0]
+    # NOTE: Rhino5 interprets [0, 0, 0] as a vector
+    # Later versions explicit conversion via rs.CreateVector([0, 0, 0])
+    return rs.VectorCreate([0, 0, 0], [0, 0, 0])
 
 # Copy of unit basis vector
 def UnitVector(b):
     vector = ZeroVector()
     vector[b] = 1
-    return rs.CreateVector(vector)
+    return vector
 
 # Copy of unit basis    
 def UnitBasis():
@@ -594,14 +596,15 @@ def ExportSelected(scale, path, name):
     rs.SelectObjects(selected)
     return export_exists
 
-# Default: create a folder next to active doc with the same name!
+# Default: create a folder next to active doc with the same name
 def GetExportPath(is_interactive):
-    name = sc.doc.ActiveDoc.Name[:-4]  # Known safe
-    path = sc.doc.ActiveDoc.Path[:-4]  # Known safe
-    if name is None or path is None:
+    if sc.doc.ActiveDoc.Path is None or sc.doc.ActiveDoc.Name is None:
         print("Save document before exporting")
         return
+    
     # NOTE: [:-4] removes ActiveDoc.Name suffix ".3dm"
+    name = sc.doc.ActiveDoc.Name[:-4]
+    path = sc.doc.ActiveDoc.Path[:-4]
     if is_interactive:
         path = rs.BrowseForFolder(
             folder=os.path.dirname(path),
@@ -611,12 +614,14 @@ def GetExportPath(is_interactive):
         if path is None:
             # User cancelled out of location selection
             return
+        name = os.path.split(path)[1]
     else:
         shutil.rmtree(path, True)
         os.mkdir(path)
         # BUG: If directory already exists os.mkdir may raise error.
-        # NOTE: Directory deletion succeedes, and subsequent run
+        # NOTE: Directory deletion still succeedes, and subsequent run
         # will not raise an error.
+    
     return path, name
 
 def RunCommand(is_interactive):
@@ -645,12 +650,7 @@ def RunCommand(is_interactive):
         scale = ModelScale()
         ExportSelected(scale, *path_name)
     finally:
-        # FIXME: Placeholders are not tracked for undo steps
-        # TODO: Undo all script changes, including selection modifications
-        # - failed execution will be cleaned
-        # - successful execution will not appear to modify file
-        # GOAL: Access Rhino's internal undo tracker so that the export
-        # will be verified to have made no change to document.
+        # Revert object names and selection
         SelectExport()
         RevertRename(name_map)
         rs.UnselectAllObjects()
