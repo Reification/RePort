@@ -28,7 +28,7 @@ namespace Reification {
 #if UNITY_EDITOR
 				return !EditorApplication.isPlaying;
 #else
-			return false;
+				return false;
 #endif
 			}
 		}
@@ -52,9 +52,41 @@ namespace Reification {
 			}
 		}
 
+		/// <summary>
+		/// Get GameObject type with respect to asset database
+		/// </summary>
+		/// <remarks>
+		/// If Connected or Persistent, use PrefabUtility.GetPrefabAssetType(gameObject) to distinguish model/prefab/variant types.
+		/// If Connected PrefabUtility.GetNearestPrefabInstanceRoot(gameObject) == gameObject to distinguish root from child. 
+		/// If Persistent use !!gameObject.transform.parent to distinguish root from child (path only identifies root).
+		/// </remarks>
+		public enum GameObjectType {
+			Nothing, // GameObject is null / destroyed
+			Instance, // Non-prefab instance in scene
+			Connected, // Instantiated prefab root or child
+			Persistent // Uninstantiated prefab root or child
+		}
+
+		public static GameObjectType GetGameObjectType(GameObject gameObject) {
+			if(!gameObject) return GameObjectType.Nothing;
+
+			// Non-empty when gameObject is an asset
+			// NOTE: if(prefab) assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(prefab)
+			var assetPath = AssetDatabase.GetAssetPath(gameObject);
+			if(assetPath.Length > 0) return GameObjectType.Persistent;
+
+			// Non-null when gameObject is an instantiated prefab
+			var prefab = PrefabUtility.GetNearestPrefabInstanceRoot(gameObject);
+			if(prefab && !PrefabUtility.IsAddedGameObjectOverride(gameObject)) return GameObjectType.Connected;
+
+			return GameObjectType.Instance;
+		}
+
 		/// <summary>Destroy, with undo support if in editor</summary>
 		public static void Destroy(Object destroy) {
 			if(destroy == null) return;
+			// FIXME: Check if object is actually asset and don't destroy
+
 			if(useEditorAction) {
 #if UNITY_EDITOR
 				if(useEditorUndo) {
@@ -69,13 +101,50 @@ namespace Reification {
 			}
 		}
 
-		/// <summary>Instantiate, with prefab linking and undo support if in editor</summary>
+		// WARNING: If there is a name override, PathName will not resolve!
+
+		// TODO: Find a way to clone prefab with overrides intact.
+		// QUESTION: Is there a way to accomplish instatiation using object serializations?
+		// Ideally, this would handle the connection and override persistence.
+		// https://docs.unity3d.com/ScriptReference/SerializedObject.html
+		// Construct, then iterate & copy?
+
+		static GameObject InstantiateChild(GameObject original, GameObject parent) {
+			GameObject child = null;
+			// IMPORTANT: PrefabUtility.InstantiatePrefab applies only to assets, not to instances
+			// IMPORTANT: PrefabUtility.GetCorrespondingObjectFromSource applies only to instances, not to assets
+			var asset = PrefabUtility.GetCorrespondingObjectFromSource(parent);
+			GameObject copy_asset = null;
+			if(asset) copy_asset = asset;
+			else copy_asset = original;
+			var copy = PrefabUtility.InstantiatePrefab(copy_asset) as GameObject;
+			if(parent != original) {
+				var path = new PathName(original, parent);
+				var find = path.Find(copy.transform);
+				if(find.Length == 1) {
+					child = find[0].gameObject;
+					// Unpack to enable orphaning, only once since nearest root was instantiated
+					var unpack = PrefabUtility.GetOutermostPrefabInstanceRoot(child);
+					while(unpack) {
+						PrefabUtility.UnpackPrefabInstance(unpack, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
+						unpack = PrefabUtility.GetOutermostPrefabInstanceRoot(child);
+					}
+					child.transform.SetParent(null);
+				}
+				EP.Destroy(copy);
+			} else {
+				child = copy;
+			}
+			return child;
+		} 
+
+		/// <summary>Instantiate, with prefab linking and undo support</summary>
 		/// <remarks>
 		/// When called with no argument this will create a new GameObject
 		/// </remarks>
-		public static GameObject Instantiate(GameObject instantiate = null) {
+		public static GameObject Instantiate(GameObject original = null) {
 			GameObject gameObject = null;
-			if(instantiate == null) {
+			if(original == null) {
 				gameObject = new GameObject();
 				if(useEditorAction) {
 #if UNITY_EDITOR
@@ -90,28 +159,64 @@ namespace Reification {
 			}
 			if(useEditorAction) {
 #if UNITY_EDITOR
-				if(PrefabUtility.GetPrefabAssetType(instantiate) != PrefabAssetType.NotAPrefab) {
-					gameObject = PrefabUtility.InstantiatePrefab(instantiate) as GameObject;
-				} else {
-					gameObject = GameObject.Instantiate(instantiate);
+				switch(GetGameObjectType(original)) {
+				case GameObjectType.Instance: {
+						// PROBLEM: GameObject.Instantiate(original) will not retain prefab links.
+						// SOLUTION: Make the object into a prefab and then unpack.
+						var tempPath = AssetDatabase.GenerateUniqueAssetPath("Assets/" + original.name + ".prefab");
+						var tempAsset = PrefabUtility.SaveAsPrefabAsset(original, tempPath);
+						gameObject = PrefabUtility.InstantiatePrefab(tempAsset) as GameObject;
+						PrefabUtility.UnpackPrefabInstance(gameObject, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
+						AssetDatabase.DeleteAsset(tempPath);
+						break;
+					}
+				case GameObjectType.Connected: {
+						var parent = PrefabUtility.GetNearestPrefabInstanceRoot(original);
+						gameObject = InstantiateChild(original, parent);
+						break;
+					}
+				case GameObjectType.Persistent: {
+						var parent = original.transform.root.gameObject;
+						gameObject = InstantiateChild(original, parent);
+						break;
+					}
+				default: // GameObjectType.Nothing
+					gameObject = new GameObject();
+					break;
 				}
 				if(useEditorUndo) {
-					Undo.RegisterCreatedObjectUndo(gameObject, "Instantiate(" + instantiate.name + ")");
+					Undo.RegisterCreatedObjectUndo(gameObject, "Instantiate GameObject(" + gameObject.name + ")");
 				} else {
 					EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 				}
 #endif
 			} else {
-				gameObject = GameObject.Instantiate(instantiate);
+				if(original) gameObject = GameObject.Instantiate(original);
+				else gameObject = new GameObject();
 			}
 			return gameObject;
 		}
 
 		public static void SetParent(Transform child, Transform parent) {
+			if(!child) return;
+
 			if(useEditorAction) {
 #if UNITY_EDITOR
 				if(useEditorUndo) {
 					Undo.SetTransformParent(child, parent, "SetParent(" + child.name + "," + parent.name + ")");
+
+					if(child.parent != parent) {
+						var parent_in_prefab = PrefabUtility.IsPartOfPrefabAsset(parent);
+						var child_in_prefab = PrefabUtility.IsPartOfPrefabAsset(child);
+						var child_type = PrefabUtility.GetPrefabAssetType(child);
+
+						Debug.LogError("Reparenting failed...");
+						child.SetParent(parent);
+						if(child.parent != parent) {
+							Debug.LogError("Reparenting failed again...");
+						}
+					}
+
 				} else {
 					child.SetParent(parent);
 					EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
@@ -140,11 +245,16 @@ namespace Reification {
 		}
 
 		/// <summary>
-		/// Enable editing of a GameObject, even if the object is a prefab
+		/// Enable editing of a GameObject, even if the object is a prefab or is in a prefab
 		/// </summary>
 		/// <remarks>
 		/// Unity2019.4: Prefab editing is limited to creation and update of components and children.
 		/// Removal requires opening the prefab for editing.
+		/// When an object is a child of a prefab, the nearest parent prefab will be edited instead of
+		/// defining overrides or creating a variant.
+		/// WARNING: This will result in missing overrides on the editObject.
+		/// WARNING: If gameObject name has been changed editObject may be null,
+		/// and if path is not unique editObject may not correspond.
 		/// </remarks>
 		public class EditGameObject : System.IDisposable {
 			/// <summary>
@@ -152,34 +262,51 @@ namespace Reification {
 			/// </summary>
 			public GameObject editObject { get; private set; }
 
-			GameObject gameObject;
+			public GameObjectType editObjectType { get; private set; } = GameObjectType.Nothing;
+			public string editAssetPath { get; private set; } = "";
+			GameObject editPrefab;
 
 			public EditGameObject(GameObject gameObject) {
 				if(useEditorAction) {
 #if UNITY_EDITOR
-					switch(PrefabUtility.GetPrefabAssetType(gameObject)) {
-					case PrefabAssetType.NotAPrefab:
-						if(Application.isBatchMode) {
-							EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-						} else {
-							Undo.RecordObject(gameObject, $"Merge to {gameObject.name}");
+					editObjectType = GetGameObjectType(gameObject);
+					switch(editObjectType) {
+					case GameObjectType.Persistent: {
+							// Load as PreviewScene Object 
+							editAssetPath = AssetDatabase.GetAssetPath(gameObject);
+							editPrefab = PrefabUtility.LoadPrefabContents(editAssetPath);
+							editObject = editPrefab;
+							break;
 						}
+					case GameObjectType.Connected: {
+							// Path to gameObject relative to prefab
+							// NOTE: EditorSceneManager.IsPreviewSceneObject(editPrefab) == true
+							var prefab = PrefabUtility.GetNearestPrefabInstanceRoot(gameObject);
+							var path = new PathName(gameObject, prefab);
+
+							// Instantiate a copy of prefab and locate copy of gameObject
+							var asset = PrefabUtility.GetCorrespondingObjectFromSource(prefab);
+							editAssetPath = AssetDatabase.GetAssetPath(asset);
+							editPrefab = PrefabUtility.InstantiatePrefab(asset) as GameObject;
+							var editObjectList = path.Find(editPrefab.transform);
+							if(editObjectList.Length == 1) editObject = editObjectList[0].gameObject;
+							break;
+						}
+					case GameObjectType.Instance:
 						editObject = gameObject;
 						break;
-					case PrefabAssetType.Regular:
-					case PrefabAssetType.Variant:
-						var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(gameObject);
-						editObject = PrefabUtility.LoadPrefabContents(prefabPath);
-						break;
-					default:
-						editObject = null;
-						break;
+					}
+
+					if(Application.isBatchMode) {
+						EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+					} else {
+						// QUESTION: Does this work for prefabs?
+						Undo.RecordObject(gameObject, $"Edit {gameObject.name}");
 					}
 #endif
 				} else {
 					editObject = gameObject;
 				}
-				this.gameObject = gameObject;
 			}
 
 			public void Dispose() {
@@ -187,79 +314,28 @@ namespace Reification {
 
 				if(useEditorAction) {
 #if UNITY_EDITOR
-					switch(PrefabUtility.GetPrefabAssetType(gameObject)) {
-					case PrefabAssetType.NotAPrefab:
-						if(Application.isBatchMode) {
-							EditorSceneManager.SaveOpenScenes();
-						} else {
-							Undo.RecordObject(gameObject, $"Merge to {gameObject.name}");
-							// User interaction - do not save
+					switch(editObjectType) {
+					case GameObjectType.Persistent: {
+							PrefabUtility.SaveAsPrefabAsset(editPrefab, editAssetPath);
+							PrefabUtility.UnloadPrefabContents(editPrefab);
+							break;
 						}
-						break;
-					case PrefabAssetType.Regular:
-					case PrefabAssetType.Variant:
-						var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(gameObject);
-						PrefabUtility.SaveAsPrefabAsset(editObject, prefabPath);
-						PrefabUtility.UnloadPrefabContents(editObject);
-						break;
+					case GameObjectType.Connected: {
+							PrefabUtility.ApplyPrefabInstance(editPrefab, InteractionMode.AutomatedAction);
+							Object.DestroyImmediate(editPrefab);
+							break;
+						}
+					case GameObjectType.Instance: {
+							if(Application.isBatchMode) {
+								EditorSceneManager.SaveOpenScenes();
+							}
+							// else: User interaction - do not save
+							break;
+						}
 					}
 #endif
 				}
 				editObject = null;
-			}
-		}
-
-		/// <summary>
-		/// Copies a GameObject without losing child prefab links
-		/// </summary>
-		/// <remarks>
-		/// Unity2019.4: GameObject.Instantiate completely unpacks prefab links.
-		/// </remarks>
-		public class CopyGameObject : System.IDisposable {
-			/// <summary>
-			/// Copy of GameObject with prefab links sustained
-			/// </summary>
-			public GameObject copyObject { get; private set; }
-			GameObject gameObject;
-			string tempPath;
-
-			public CopyGameObject(GameObject gameObject) {
-				if(useEditorAction) {
-#if UNITY_EDITOR
-					GameObject sourceAsset = null;
-					if(PrefabUtility.GetPrefabAssetType(gameObject) == PrefabAssetType.NotAPrefab) {
-						tempPath = AssetDatabase.GenerateUniqueAssetPath("Assets/" + gameObject.name + ".prefab");
-						sourceAsset = PrefabUtility.SaveAsPrefabAsset(gameObject, tempPath);
-						PrefabUtility.UnpackPrefabInstance(copyObject, PrefabUnpackMode.OutermostRoot, InteractionMode.AutomatedAction);
-						copyObject.name = gameObject.name;
-					} else {
-						var sourcePath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(gameObject);
-						sourceAsset = AssetDatabase.LoadAssetAtPath<GameObject>(sourcePath);
-						copyObject = PrefabUtility.InstantiatePrefab(sourceAsset) as GameObject;
-					}
-					copyObject.name = gameObject.name;
-					// QUESTION: Do transform parameters also need to be copied?
-#endif
-					this.gameObject = gameObject;
-				} else {
-					copyObject = GameObject.Instantiate(gameObject);
-				}
-			}
-
-			public void Dispose() {
-				if(copyObject == null) return;
-
-				if(useEditorAction) {
-#if UNITY_EDITOR
-					GameObject.DestroyImmediate(copyObject);
-					if(PrefabUtility.GetPrefabAssetType(gameObject) == PrefabAssetType.NotAPrefab) {
-						AssetDatabase.DeleteAsset(tempPath);
-					}
-#endif
-				} else {
-					GameObject.Destroy(copyObject);
-				}
-				copyObject = null;
 			}
 		}
 

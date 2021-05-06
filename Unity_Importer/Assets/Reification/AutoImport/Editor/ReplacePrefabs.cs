@@ -13,6 +13,8 @@ namespace Reification {
 	/// A placeholder is an empty transform with a name that identifies the corresponding prefab.
 	/// Using placeholders, a model exporter can describe each referentially instantiated constituent as a
 	/// separate model file, with the constituent becoming a prefab on import.
+	/// If no prefab is found an empty prefab will be created with the expected path and name, 
+	/// to ensure that the object correspondance is maintained.
 	/// </remarks>
 	public class ReplacePrefabs {
 		const string menuItemName = "Reification/Replace Prefabs";
@@ -72,6 +74,12 @@ namespace Reification {
 				_prefab = null;
 			}
 
+			public CachedPrefab(GameObject asset) {
+				var pathname = AssetDatabase.GetAssetPath(asset);
+				SplitPathName(pathname, out _path, out _name, out _type);
+				_prefab = asset;
+			}
+
 			string _type;
 			public string type => _type;
 
@@ -93,11 +101,14 @@ namespace Reification {
 		static Dictionary<string, CachedPrefab> GetPrefabs(string searchRoot) {
 			var prefabs = new Dictionary<string, CachedPrefab>();
 
-			// FIXME: Only prefab assets should be included - FBX will have a similar name and should be ignored
 			var prefabGUIDs = AssetDatabase.FindAssets("t:GameObject", new[] { searchRoot });
 			foreach(var guid in prefabGUIDs) {
 				var cached = new CachedPrefab(guid);
 				if(cached.type != "prefab") continue;
+				if(prefabs.ContainsKey(cached.name)) {
+					Debug.LogWarning($"Repeated prefab key {cached.name} at {AssetDatabase.GUIDToAssetPath(guid)} and {prefabs[cached.name].path}");
+					continue;
+				}
 				prefabs.Add(cached.name, cached);
 			}
 
@@ -133,21 +144,27 @@ namespace Reification {
 			Dictionary<string, CachedPrefab> prefabs = GetPrefabs(prefabPath);
 			var children = gameObject.Children(true);
 			foreach(var child in children) {
+				// Do not modify existing child prefabs
+				var childPrefab = PrefabUtility.GetNearestPrefabInstanceRoot(child);
+				if(childPrefab != null && childPrefab != gameObject) continue;
+
+				// Placeholder names are constructed as "prefab_name=object_name"
 				var name_parts = child.name.Split('=');
 				if(name_parts.Length == 1) continue;
-				if(prefabs.TryGetValue(name_parts[0], out var cached)) {
-					// When reimporting retain previous replacement if present
-					string replaceName = ConfigureName(child.name);
-					var replaceList = child.transform.parent.NameFindInChildren(replaceName);
-					// ASSUME: Each placeholder yields a unique configured name
-					if(replaceList.Length == 0) {
-						child.name = replaceName;
-						ConfigurePrefab(child.transform, cached);
-					}
-					EP.Destroy(child);
-				} else {
-					Debug.LogWarning($"Missing prefab for {gameObject.name} place holder {child.Path()}");
+
+				// Create an placeholder prefab that can be modified after import
+				if(!prefabs.ContainsKey(name_parts[0])) {
+					var placeholder = EP.Instantiate();
+					placeholder.name = name_parts[0];
+					var placeholderPath = prefabPath + "/" + placeholder.name + ".prefab";
+					var placeholderAsset = PrefabUtility.SaveAsPrefabAsset(placeholder, placeholderPath);
+					prefabs[name_parts[0]] = new CachedPrefab(placeholderAsset);
+					EP.Destroy(placeholder);
+					//Debug.Log($"Missing prefab in {gameObject.name} for {child.Path()} -> created placeholder");
 				}
+
+				ConfigurePrefab(child.transform, prefabs[name_parts[0]]);
+				EP.Destroy(child);
 			}
 		}
 	}

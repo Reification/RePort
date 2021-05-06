@@ -24,7 +24,6 @@ namespace Reification {
 		const string menuItemName = "Reification/Auto LOD";
 		const int menuItemPriority = 23;
 
-
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		static private bool Validate() {
 			return Selection.gameObjects.Length > 0;
@@ -53,15 +52,12 @@ namespace Reification {
 					// AutoLOD will be applied to child prefabs separately
 					var childPrefab = PrefabUtility.GetNearestPrefabInstanceRoot(child);
 					if(childPrefab != null && childPrefab != editObject) continue;
-					var isGroup = child.GetComponent<LODGroup>();
 					var hasRenderer = child.GetComponent<Renderer>();
-					if(!(isGroup || hasRenderer)) continue;
-					if(hasRenderer) {
-						// MeshRenderers will have been reparented to LODGroup with original name
-						var inGroup = child.GetComponentInParent<LODGroup>();
-						if(inGroup) continue;
-					}
-
+					if(!hasRenderer) continue;
+					// MeshRenderers will be managed by LODGroup
+					var inGroup = child.GetComponentInParent<LODGroup>();
+					if(inGroup) continue;
+					// Add renderer to group
 					var path = new PathName(child);
 					if(!groups.ContainsKey(path)) groups.Add(path, new List<GameObject>());
 					groups[path].Add(child);
@@ -215,8 +211,6 @@ namespace Reification {
 			lodGroup.RecalculateBounds();
 		}
 
-		// TODO: Verify the LODGroup scale claim, then adjust this accordingly
-
 		/// <summary>
 		/// Sets the scale in the lightmap
 		/// </summary>
@@ -238,6 +232,10 @@ namespace Reification {
 				return _crossfadeShader;
 			}
 		}
+
+		// QUESTION: Should instancing be enabled to support prefabs?
+		// Dynamic objects, and lower levels of detail will be non-static.
+		// https://docs.unity3d.com/Manual/GPUInstancing.html
 
 		/// <summary>
 		/// Replace Unity Standard shader with a shader supporting LOD blending
