@@ -344,7 +344,7 @@ namespace Reification {
 		/// </summary>
 		/// <remarks>
 		/// Data will be created in the StreamingAssets folder, which is in Assets
-		/// while using the Editor, and in the package files when using a runtime.
+		/// while using the Editor, and in the package files while in the case of a build.
 		/// </remarks>
 		/// <param name="path">relative path using "/" directory separators</param>
 		/// <param name="create">when false count directories to be created, without creating them</param>
