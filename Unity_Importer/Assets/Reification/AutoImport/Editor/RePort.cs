@@ -420,7 +420,7 @@ namespace Reification {
 		static void ProcessConfiguredImport() {
 			// Ensure that ProcessImportedModels is called only once per import batch
 			// IMPORTANT: Unregistering must occur before any possible import exception
-			// Otherwise the editor will deadlock while repeatedly attempting to import.
+			// Otherwise the editor will stall while repeatedly attempting to import.
 			EditorApplication.update -= ProcessConfiguredImport;
 			// PROBLEM: Unsubscribing from EditorApplication.update is not immediate - multiple callbacks may be received
 			// SOLUTION: Abort immediately if importAssets is empty
@@ -440,13 +440,15 @@ namespace Reification {
 				foreach(var assetPath in configuredImport) {
 					//Debug.Log($"RePort.ProcessImportedModels(): modelPath = {assetPath}");
 
-					// TODO: Skip this step for places model element
-					// Extract all assets from each imported model
-					// Create model prefab and extract material copies
+					// Extract all assets from each imported model and create a prefab
 					var model = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
 					var modelPathRoot = assetPath.Substring(0, assetPath.LastIndexOf('.'));
 					GatherAssets.ApplyTo(model, modelPathRoot);
 					var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(modelPathRoot + ".prefab");
+					// Remove the original model file
+					// NOTE: If the original FBX asset remains in the project it will trigger the reimport process
+					// whenever the project is cloned.
+					AssetDatabase.MoveAssetToTrash(assetPath);
 
 					// Classify models according to path and suffix
 					var mergePath = assetPath.Substring(0, assetPath.LastIndexOf('/'));
@@ -518,10 +520,7 @@ namespace Reification {
 			}
 		}
 
-		// TODO: Check for prefab existence when creating
-		// options are skip, version, or overwrite.
-
-		// Create an empty prefab adjacent to the merged asset folder
+		// Find or make a prefab adjacent to the merged asset folder
 		static void CreateMerged(string path, Dictionary<string, GameObject> mergedPrefabs) {
 			if(!mergedPrefabs.ContainsKey(path)) {
 				// Find or make a merged prefab
