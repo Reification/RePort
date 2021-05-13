@@ -10,7 +10,7 @@ using UnityEditor.SceneManagement;
 
 namespace Reification {
 	public class RePort : AssetPostprocessor {
-		public static Version version { get; private set; } = new Version(0, 3, 0);
+		public static Version version { get; private set; } = new Version(0, 3, 1);
 
 		// This preprocessor pertains only to models in this path
 		public const string importPath = "Assets/RePort/";
