@@ -11,6 +11,22 @@ using UnityEditor.SceneManagement;
 namespace Reification {
 	public class RePort : AssetPostprocessor {
 		public static Version version { get; private set; } = new Version(0, 3, 1);
+		
+		[MenuItem("Reification/About", priority = int.MaxValue)]
+		static private void About() {
+			var about = $"RePort v{version}" +
+			"\nCopyright 2021 Reification Incorporated. (https://reification.io)" +
+			"\nLicensed under Apache 2.0. All Rights reserved. (https://github.com/Reification/RePort)";
+
+			about += "\n\nImporters:";
+			about += "\n- FBX, single files (https://docs.unity3d.com/Manual/3D-formats.html)";
+			foreach(var importer in importerDict.Values) {
+				about += "\n- " + importer.About();
+			}
+
+			// TODO: Make this a pop-up window
+			Debug.Log(about);
+		}
 
 		// This preprocessor pertains only to models in this path
 		public const string importPath = "Assets/RePort/";
@@ -106,6 +122,11 @@ namespace Reification {
 			/// Assets created during this call cannot be referenced.
 			/// </remarks>
 			void ImportModel(GameObject model, string element);
+
+			/// <summary>
+			/// Brief description of importer
+			/// </summary>
+			string About();
 		}
 
 		static Dictionary<string, Importer> importerDict = new Dictionary<string, Importer>();
