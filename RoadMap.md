@@ -2,8 +2,6 @@ RePort is a slice of [Reification's](https://reification.io) codebase. As we pro
 
 We hope that this project will remove barries (both financial and technical) to experiencing architectural creations and ideas.
 
-Presently, the project only includes a custom exporter for Rhino. Other exporters will be added as opportunity permits.
-
 ## v0.1.0 Alpha (private release)
 
 ## v0.1.1 Alpha (public release) - 8 Feb 2021
@@ -33,43 +31,45 @@ Presently, the project only includes a custom exporter for Rhino. Other exporter
 * Gain and bloom adjustments make light sources appear luminous
 * Optional "good" alternative to "fast" lighting generation
 
-## v0.3.1 - Unity Update
-* Update to Unity 2020 LTS
-* Multi-touch trackpad support
+## v0.3.1 - Landscape Importing - 18 May 2021
+* Enable importing without scene creation
+* Lightmap UVs are generated only for static LOD0 meshes
+* Create placeholders for missing prefabs to enable reaplcement
+* Import process for large terrain
+* Import process for replaced vegetation assets
+* Added light probe proxies for lower levels of detail
+* Rhino linear lights are approximated using Unity area lights
+* Original model files are removed to prevent reimporting
+* Exported models use enclosing folder name instead of document name
+* Height adjustment by scrolling or when holding Alt/Opt
 
-## v0.3.2 - Semantic Importing
-* Interactive export and import for plants
-* Interactive export and import for terrain
-* Allow passage through objects named "door" or "window"
-* Make materials shiney if they are named "glass" or "metal"
+## v0.3.2 - Lower Detail Optimizations
+* Conditional proxy volume updates
+* Area-dependent detail thresholds
+* Identify normalmap textures during import
 
 ## v0.3.3 - Progress Bars & Performance
-* Import progress indictors for entire process
-* Mesh modification progress pop-up
-* Identify normalmap textures during import
+* Import progress indictor for entire import process
+* Mesh modification progress indicator
 * Prevent OS window lock-up during drag-and-drop import
 
-## v0.4.0 - Interior Lighting
-* Auto light instensity adjustment
-* Auto terrain lightmap parameters
-* Auto vegetation replacement
-
-## v0.4.1 - General Transforms
+## v0.4.0 - General Transforms
 * Support for general linear transforms
 * Model recentering
 * Mesh standardizing
-* Simplify model transform hierarchy
 
 ## v1.0.0 - Reification Build Request
 * Upload configured scenes for code-signed multi-user deployment
 
 ## v1.0.1 - Tutorials
-* Example Rhino project
-* Scripting Documentation
 * Tutorial Video
+* Example Rhino project
 
 ## Will you be adding support for other CAD/BIM applications?
 Yes. Applications will be added to the roadmap when support plans are finalized. If you would like to see a specific application supported, [please let us know.](mailto:support@reification.io)
 
-## Why does RePort use deprecated lighting and XR systems?
-In both of these cases Unity has chosen to deprecate a system without providing an equally capable alternative. In the case of Enlighten, the built in alternative (Unity’s Progressive lightmapper) will not update bounced lighting as the sun moves. In the case of the Virtual Reality SDKs, the replacement (XR Plugin Management) does not support SteamVR. We will be assessing new solutions as they become available.
+## Will you be adding support for ray tracing?
+Our first priority is supporting realtime global illumination. Unity has announced that their 2021.2 release will add support for Enlighten in the HDRP, which we are currently testing.
+
+## Will you be adding support for mobile?
+We are evaluating solutions that will enable mobile support without compromising visual fidelity.
