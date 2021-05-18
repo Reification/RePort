@@ -6,8 +6,8 @@ Convert your building design into a first-person experience in 3 steps:
 
 Supports most CAD/BIM programs, full features for Rhino only
 
-## [Download the latest package](https://github.com/Reification/RePort/releases/download/v0.3.0/RePort.zip)
-No coding required - just drag-and-drop each plugin to install
+## [Download the latest package](https://github.com/Reification/RePort/releases/download/v0.3.1/RePort.zip)
+No programming required - just drag-and-drop each plugin to install
 
 ## RePort features include:
 * Dynamic bounced sunlight
@@ -15,7 +15,6 @@ No coding required - just drag-and-drop each plugin to install
 * Rhino blocks become Unity prefabs
 * Rhino parametric surfaces are exported with multiple levels of detail
 * Mesh repair tools for single-sided or inverted surfaces
-* All import steps can be performed manually
 
 ## [Learn more](https://github.com/Reification/RePort/blob/main/RePort_Guide.pdf)
 

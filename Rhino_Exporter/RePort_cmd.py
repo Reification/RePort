@@ -14,7 +14,7 @@ __commandname__ = __plugin__.title
 # SOLUTION: Make the version in __plugin__.py invariant and declare code version here.
 # NOTE: The version declared in __plugin__.py must be non-zero
 # https://discourse.mcneel.com/t/updating-python-plugin-version/119362
-RePort_version = "0.3.0" #__plugin__.version
+RePort_version = "0.3.1" #__plugin__.version
 
 Rhino_version = RhinoApp.Version.Major
 

@@ -131,7 +131,6 @@ namespace Reification {
 			static RhinoImporter() {
 				var importer = new RhinoImporter();
 				RePort.RegisterImporter("3dm_7", importer);
-				RePort.RegisterImporter("3dm_6", importer);
 			}
 
 			public virtual void ConfigureImport(ModelImporter importer, string element) {
@@ -174,6 +173,24 @@ namespace Reification {
 					break;
 				}
 			}
+
+			public virtual string About() => "Rhinoceros 3D v7, RePort directory (https://www.rhino3d.com/)";
+		}
+
+		[InitializeOnLoad]
+		public class Rhino6Importer: RhinoImporter {
+			static Rhino6Importer() {
+				RePort.RegisterImporter("3dm_6", new Rhino5Importer());
+			}
+
+			public override void ImportHierarchy(Transform hierarchy, string element) {
+				// Rotate each layer to be consistent with Rhino6 import
+				hierarchy.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f) * hierarchy.localRotation;
+
+				base.ImportHierarchy(hierarchy, element);
+			}
+
+			public override string About() => "Rhinoceros 3D v6, RePort directory (https://www.rhino3d.com/download/)";
 		}
 
 		[InitializeOnLoad]
@@ -188,6 +205,8 @@ namespace Reification {
 
 				base.ImportHierarchy(hierarchy, element);
 			}
+
+			public override string About() => "Rhinoceros 3D v5, RePort directory (https://www.rhino3d.com/download/)";
 		}
 	}
 }
