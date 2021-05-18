@@ -39,7 +39,7 @@ namespace Reification {
 			EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
 		}
 
-		static public string ApplyTo(string path, params GameObject[] gameObjects) {
+		public static string ApplyTo(string path, params GameObject[] gameObjects) {
 			var scenePath = CreateScene(path, gameObjects);
 			// IMPORTANT: Until the scene has been imported physics raycasts
 			// required for object placement will not hit colliders
@@ -51,7 +51,7 @@ namespace Reification {
 			return scenePath;
 		}
 
-		static public string CreateScene(string path, params GameObject[] gameObjects) {
+		public static string CreateScene(string path, params GameObject[] gameObjects) {
 			var scenePath = path + ".unity";
 
 			// PROBLEM: When using NewSceneMode.Single during import assertion "GetApplication().MayUpdate()" fails
@@ -79,7 +79,7 @@ namespace Reification {
 			return scenePath;
 		}
 
-		static public void AddDefaults(string scenePath) {
+		public static void AddDefaults(string scenePath) {
 			var sceneSetup = EditorSceneManager.GetSceneManagerSetup();
 			try {
 				// IMPORTANT: Lightmapping.Bake() should be called when only scenes contributing to bake are open
@@ -94,8 +94,9 @@ namespace Reification {
 					foreach(var light in gameObject.GetComponentsInChildren<Light>()) SetLightRange(sceneBounds, light);
 					// TODO: Hook for intensity adjustment based on light target
 
-					AutoLightSources.ApplyTo(gameObject);
+					AutoLightCharts.ApplyTo(gameObject);
 					AutoLightProbes.ApplyTo(gameObject);
+					AutoLightSources.ApplyTo(gameObject);
 					// TODO: Hook for Reflection probes, Acoustic probes...
 				}
 
@@ -115,7 +116,7 @@ namespace Reification {
 		/// <summary>
 		/// Bounds encapsulating all renderers in scene
 		/// </summary>
-		static public Bounds SceneBounds(Scene scene) {
+		public static Bounds SceneBounds(Scene scene) {
 			var emptyBounds = true;
 			var sceneBounds = new Bounds();
 			foreach(var gameObject in scene.GetRootGameObjects()) {
@@ -137,7 +138,7 @@ namespace Reification {
 		/// <summary>
 		/// Set light range to envelop bounds
 		/// </summary>
-		static public void SetLightRange(Bounds bounds, Light light) {
+		public static void SetLightRange(Bounds bounds, Light light) {
 			var toCorner = Vector3.zero;
 			var toCenter = bounds.center - light.transform.position;
 			for(var i = 0; i < 3; ++i) {
@@ -174,7 +175,7 @@ namespace Reification {
 
 		public const string playerPrefabPath = "Assets/Reification/AutoImport/Prefabs/Player.prefab";
 
-		static public float playerPositionStep = 1f; // meters
+		public static float playerPositionStep = 1f; // meters
 
 		static void CreatePlayer(Bounds sceneBounds) {
 			var playerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(playerPrefabPath);

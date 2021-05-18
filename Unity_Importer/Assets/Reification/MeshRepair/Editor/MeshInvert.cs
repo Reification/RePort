@@ -15,12 +15,18 @@ namespace Reification {
 		[MenuItem(gameObjectMenuName, validate = true, priority = gameObjectMenuPriority)]
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
+			if(!EP.useEditorAction) return false;
 			return Selection.gameObjects.Length > 0;
 		}
 
 		[MenuItem(gameObjectMenuName, validate = false, priority = gameObjectMenuPriority)]
 		[MenuItem(menuItemName, validate = false, priority = menuItemPriority)]
 		private static void Execute() {
+			// WARNING: Scene cannot be marked dirty during play
+			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+			Undo.IncrementCurrentGroup();
+			Undo.SetCurrentGroupName("Mesh/Invert");
+
 			var selectionList = Selection.gameObjects;
 			foreach(var selection in selectionList) SearchAt(selection);
 		}
@@ -38,10 +44,7 @@ namespace Reification {
 		}
 
 		public static void ApplyTo(GameObject gameObject) {
-			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-			Undo.IncrementCurrentGroup();
-			Undo.SetCurrentGroupName("Mesh/Invert");
-
+			// WARNING: Attempting to invert meshes during play yields "Invalid AABB" errors
 			var meshFilter = gameObject.GetComponent<MeshFilter>();
 			if(!meshFilter) return;
 			var sharedMesh = meshFilter.sharedMesh;

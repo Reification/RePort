@@ -14,7 +14,7 @@ __commandname__ = __plugin__.title
 # SOLUTION: Make the version in __plugin__.py invariant and declare code version here.
 # NOTE: The version declared in __plugin__.py must be non-zero
 # https://discourse.mcneel.com/t/updating-python-plugin-version/119362
-RePort_version = "0.3.0" #__plugin__.version
+RePort_version = "0.3.1" #__plugin__.version
 
 Rhino_version = RhinoApp.Version.Major
 
@@ -141,7 +141,7 @@ def SaveSuffix():
 
 # Save options target export for rendering
 # NOTE: GeometryOnly=Yes would exclude BOTH cameras and lights
-# NOTE: Unrecognized commands are interpreted as filename!
+# WARNING: Unrecognized commands are interpreted as filename!
 # When running Rhino5 entering Version=6 saves "Version=6.3dm"
 def SaveOptions():
     # https://docs.mcneel.com/rhino/5/help/en-us/commands/save.htm
@@ -331,11 +331,17 @@ def ModelScale():
     if units == 25: scale = meter * 149597870700 * 648000 / 3.14159265358979323
     return scale
 
+# Zero vector
+def ZeroVector():
+    # NOTE: Rhino5 interprets [0, 0, 0] as a vector
+    # Later versions explicit conversion via rs.CreateVector([0, 0, 0])
+    return rs.VectorCreate([0, 0, 0], [0, 0, 0])
+
 # Copy of unit basis vector
 def UnitVector(b):
-    vector = [0, 0, 0]
+    vector = ZeroVector()
     vector[b] = 1
-    return rs.CreateVector(vector)
+    return vector
 
 # Copy of unit basis    
 def UnitBasis():
@@ -399,12 +405,15 @@ def BlockLocation(object, scale):
 # PROBLEM: Lights-only export fails!
 # PROBLEM: Lights are exported without rotation or shape!
 # SOLUTION: Create a placeholder tetrahedron that encodes light parameters
+# PROBLEM: FBX does not support line light type
+# https://help.autodesk.com/view/FBX/2020/ENU/?guid=FBX_Developer_Help_cpp_ref_class_fbx_light_html
+# SOLUTION: Describe line lights as area lights with length equal to zero
 # - Rhino exports color, intensity and type
 # - Placeholders will be created with corresponding names
 # - Light type will be encoded in the name in case of unsupported types
 # - Rectangles use X and Y scale for dimensions
 # - Spots will use X (and equal Y) ratio to Z=1 for opening angle
-# - Lines have a Y scale equal to the width
+# - Lines have a Y scale equal to the width, other dimensions equal to zero
 # - Range must be determined from context on import
 # https://developer.rhino3d.com/api/rhinoscript/light_methods/light_methods.htm
 def LightLocation(light, scale):
@@ -459,7 +468,11 @@ def LightLocation(light, scale):
         lightType = "LinearLight"
         widthBasis = direction / 2
         position = position + widthBasis
-        basis[2] = widthBasis
+        basis = [
+            widthBasis,
+            basis[1],
+            -basis[0]
+        ]
         #clone = rs.AddLinearLight (position - widthBasis, position + widthBasis)
     
     # Create placeholder mesh
@@ -583,14 +596,15 @@ def ExportSelected(scale, path, name):
     rs.SelectObjects(selected)
     return export_exists
 
-# Default: create a folder next to active doc with the same name!
+# Default: create a folder next to active doc with the same name
 def GetExportPath(is_interactive):
-    name = sc.doc.ActiveDoc.Name[:-4]  # Known safe
-    path = sc.doc.ActiveDoc.Path[:-4]  # Known safe
-    if name is None or path is None:
+    if sc.doc.ActiveDoc.Path is None or sc.doc.ActiveDoc.Name is None:
         print("Save document before exporting")
         return
+    
     # NOTE: [:-4] removes ActiveDoc.Name suffix ".3dm"
+    name = sc.doc.ActiveDoc.Name[:-4]
+    path = sc.doc.ActiveDoc.Path[:-4]
     if is_interactive:
         path = rs.BrowseForFolder(
             folder=os.path.dirname(path),
@@ -600,12 +614,14 @@ def GetExportPath(is_interactive):
         if path is None:
             # User cancelled out of location selection
             return
+        name = os.path.split(path)[1]
     else:
         shutil.rmtree(path, True)
         os.mkdir(path)
         # BUG: If directory already exists os.mkdir may raise error.
-        # NOTE: Directory deletion succeedes, and subsequent run
+        # NOTE: Directory deletion still succeedes, and subsequent run
         # will not raise an error.
+    
     return path, name
 
 def RunCommand(is_interactive):
@@ -620,6 +636,9 @@ def RunCommand(is_interactive):
         print(command_preamble + ": no export location -> abort")
         return
     
+    # Record modification status
+    modified = sc.doc.Modified
+    
     name_map = {}
     selected = rs.SelectedObjects(True, True)
     try:
@@ -631,18 +650,16 @@ def RunCommand(is_interactive):
         scale = ModelScale()
         ExportSelected(scale, *path_name)
     finally:
-        # FIXME: Placeholders are not tracked for undo steps
-        # TODO: Undo all script changes, including selection modifications
-        # - failed execution will be cleaned
-        # - successful execution will not appear to modify file
-        # GOAL: Access Rhino's internal undo tracker so that the export
-        # will be verified to have made no change to document.
+        # Revert object names and selection
         SelectExport()
         RevertRename(name_map)
         rs.UnselectAllObjects()
         rs.SelectObjects(selected)
         
         rs.EnableRedraw(True)
+    
+    # Restore modification status - all changes have been reverted
+    sc.doc.Modified = modified
     print(command_preamble + ": success")
 
 # GOAL: No changes to scene (no save request)

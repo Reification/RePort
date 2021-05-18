@@ -34,7 +34,7 @@ namespace Reification {
 		/// </summary>
 		/// <param name="gameObject">Root of hierarchy to be converted to static configuration</param>
 		/// <param name="prefabs">Apply static conversion overrides to prefabs in hierarchy</param>
-		static public void ApplyTo(GameObject gameObject, bool prefabs = false) {
+		public static void ApplyTo(GameObject gameObject, bool prefabs = false) {
 			using(var editScope = new EP.EditGameObject(gameObject)) {
 				var editObject = editScope.editObject;
 
@@ -59,12 +59,12 @@ namespace Reification {
 			}
 		}
 
-		static public void GameObjectSetStatic(GameObject gameObject) {
+		public static void GameObjectSetStatic(GameObject gameObject) {
 			Undo.RecordObject(gameObject, "GameObject Set Static");
 			GameObjectUtility.SetStaticEditorFlags(gameObject, (StaticEditorFlags)~0);
 		}
 
-		static public void RendererSetStatic(Renderer renderer) {
+		public static void RendererSetStatic(Renderer renderer) {
 			Undo.RecordObject(renderer, "Renderer Set Static");
 			renderer.receiveShadows = true;
 			renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
@@ -101,7 +101,7 @@ namespace Reification {
 			}
 		}
 
-		static public void ColliderSetStatic(Collider collider) {
+		public static void ColliderSetStatic(Collider collider) {
 			Undo.RecordObject(collider, "Collider Set Static");
 			var meshCollider = collider as MeshCollider;
 			if(meshCollider) {
@@ -109,7 +109,7 @@ namespace Reification {
 			}
 		}
 
-		static public void LightSetStatic(Light light) {
+		public static void LightSetStatic(Light light) {
 			Undo.RecordObject(light, "Light Set Static");
 			light.lightmapBakeType = LightmapBakeType.Baked;
 			light.shadows = LightShadows.Soft;

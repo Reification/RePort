@@ -11,17 +11,18 @@ namespace Reification {
 	/// </summary>
 	/// <remarks>
 	/// This modifies the model by removing any repeated levels of detail.
-	/// It also modifies associated materials to enable fading between detal levels.
+	/// Ihis modifies associated materials to enable fading between detal levels.
+	/// 
 	/// Applying this to an existing model will update all LODGroup components and all materials.
 	/// Applying this to a model with an added detail level will merge those detail components
 	/// into existing LODGroups.
+	/// 
 	/// Non MeshRenderers are supported, provided they have a sibling MeshFilter 
 	/// with a vertex count > 0 determining the relative detail.
 	/// </remarks>
 	public class AutoLOD {
 		const string menuItemName = "Reification/Auto LOD";
 		const int menuItemPriority = 23;
-
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		static private bool Validate() {
@@ -38,7 +39,7 @@ namespace Reification {
 			}
 		}
 
-		static public void ApplyTo(GameObject gameObject) {
+		public static void ApplyTo(GameObject gameObject) {
 			using(var editScope = new EP.EditGameObject(gameObject)) {
 				var editObject = editScope.editObject;
 				// Gather all MeshRenderer components that are leaf nodes
@@ -51,15 +52,12 @@ namespace Reification {
 					// AutoLOD will be applied to child prefabs separately
 					var childPrefab = PrefabUtility.GetNearestPrefabInstanceRoot(child);
 					if(childPrefab != null && childPrefab != editObject) continue;
-					var isGroup = child.GetComponent<LODGroup>();
 					var hasRenderer = child.GetComponent<Renderer>();
-					if(!(isGroup || hasRenderer)) continue;
-					if(hasRenderer) {
-						// MeshRenderers will have been reparented to LODGroup with original name
-						var inGroup = child.GetComponentInParent<LODGroup>();
-						if(inGroup) continue;
-					}
-
+					if(!hasRenderer) continue;
+					// MeshRenderers will be managed by LODGroup
+					var inGroup = child.GetComponentInParent<LODGroup>();
+					if(inGroup) continue;
+					// Add renderer to group
 					var path = new PathName(child);
 					if(!groups.ContainsKey(path)) groups.Add(path, new List<GameObject>());
 					groups[path].Add(child);
@@ -189,7 +187,7 @@ namespace Reification {
 			return Mathf.Pow(0.5f, lod + 1);
 		}
 
-		static public void ConfigureLODGroup(LODGroup lodGroup, LOD[] lodList) {
+		public static void ConfigureLODGroup(LODGroup lodGroup, LOD[] lodList) {
 			if(EP.useEditorUndo) Undo.RecordObject(lodGroup.gameObject, "Configure LODGroup");
 
 			// Configure all transition fractions
@@ -213,8 +211,6 @@ namespace Reification {
 			lodGroup.RecalculateBounds();
 		}
 
-		// TODO: Verify the LODGroup scale claim, then adjust this accordingly
-
 		/// <summary>
 		/// Sets the scale in the lightmap
 		/// </summary>
@@ -222,7 +218,7 @@ namespace Reification {
 		/// LoD inclusion multiplies m_ScaleInLightmap by the screenRelativeTransitionHeight
 		/// so a nominal scale of 1 will bake relative to the nominal LoD group scale.
 		/// </remarks>
-		static public void SetLightmapScale(Renderer renderer, float scale = 1f) {
+		public static void SetLightmapScale(Renderer renderer, float scale = 1f) {
 			var so = new SerializedObject(renderer);
 			so.FindProperty("m_ScaleInLightmap").floatValue = scale;
 			so.ApplyModifiedProperties();
@@ -230,12 +226,16 @@ namespace Reification {
 
 		public const string fadingShaderName = "StandardCrossfade";
 		static Shader _crossfadeShader = null;
-		static public Shader crossfadeShader {
+		public static Shader crossfadeShader {
 			get {
 				if(_crossfadeShader == null) _crossfadeShader = Shader.Find(fadingShaderName);
 				return _crossfadeShader;
 			}
 		}
+
+		// QUESTION: Should instancing be enabled to support prefabs?
+		// Dynamic objects, and lower levels of detail will be non-static.
+		// https://docs.unity3d.com/Manual/GPUInstancing.html
 
 		/// <summary>
 		/// Replace Unity Standard shader with a shader supporting LOD blending
@@ -243,7 +243,7 @@ namespace Reification {
 		/// <remarks>
 		/// This modifies the shared material asset.
 		/// </remarks>
-		static public void UseFadingShader(Material material) {
+		public static void UseFadingShader(Material material) {
 			if(!crossfadeShader) return;
 			if(material.shader.name != "Standard") return;
 			if(PrefabUtility.IsPartOfImmutablePrefab(material)) {

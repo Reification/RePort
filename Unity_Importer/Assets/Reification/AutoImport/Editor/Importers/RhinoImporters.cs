@@ -60,6 +60,10 @@ namespace Reification {
 			placeholder.position = origin;
 
 			// Remove meshes from placeholders
+			// IMPORTANT: MeshRenderers must also be removed, in order to avoid
+			// the application of renderer configations that could modify or remove the placeholder.
+			var meshRenderer = meshFilter.GetComponent<MeshRenderer>();
+			if(meshRenderer) EP.Destroy(meshRenderer);
 			EP.Destroy(meshFilter);
 		}
 
@@ -84,6 +88,8 @@ namespace Reification {
 			light.transform.localScale = Vector3.one;
 
 			// Configure using transform local scale parameters
+			// NOTE: Disk Lights are not exported in Rhino
+			// NOTE: Volume light type are not imported to Unity, and is not exported by Rhino
 			var lightType = placeholder.name.Split('=')[0];
 			switch(lightType) {
 			case "DirectionalLight":
@@ -94,18 +100,23 @@ namespace Reification {
 				break;
 			case "SpotLight":
 				light.type = LightType.Spot;
-				light.spotAngle = 2f * Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.x) * Mathf.Rad2Deg;
-				light.innerSpotAngle = 2f * Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.y) * Mathf.Rad2Deg;
+				light.spotAngle = Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.x) * Mathf.Rad2Deg * 2f;
+				light.innerSpotAngle = Mathf.Atan2(placeholder.localScale.z, placeholder.localScale.y) * Mathf.Rad2Deg * 2f;
 				break;
 			case "RectangularLight":
 				light.type = LightType.Rectangle;
-				light.areaSize = new Vector2(2f * placeholder.localScale.x, 2f * placeholder.localScale.y);
+				light.areaSize = new Vector2(placeholder.localScale.x * 2f, placeholder.localScale.y * 2f);
+				break;
+			case "LinearLight":
+				// NOTE: Linear lights are not supported in Unity
+				// A subsequent conversion to a collection of finite-size rectangular lights will be required
+				light.type = LightType.Rectangle;
+				light.areaSize = new Vector2(placeholder.localScale.x * 2f, 0f);
 				break;
 			default:
-				// NOTE: Disk Lights are not supported in Rhino
-				// PROBLEM: Line Lights are not supported in Unity
 				Debug.LogWarning($"Unsupported light type {lightType} -> configure as point light");
 				light.type = LightType.Point;
+				light.enabled = false;
 				break;
 			}
 
@@ -120,7 +131,6 @@ namespace Reification {
 			static RhinoImporter() {
 				var importer = new RhinoImporter();
 				RePort.RegisterImporter("3dm_7", importer);
-				RePort.RegisterImporter("3dm_6", importer);
 			}
 
 			public virtual void ConfigureImport(ModelImporter importer, string element) {
@@ -163,6 +173,24 @@ namespace Reification {
 					break;
 				}
 			}
+
+			public virtual string About() => "Rhinoceros 3D v7, RePort directory (https://www.rhino3d.com/)";
+		}
+
+		[InitializeOnLoad]
+		public class Rhino6Importer: RhinoImporter {
+			static Rhino6Importer() {
+				RePort.RegisterImporter("3dm_6", new Rhino5Importer());
+			}
+
+			public override void ImportHierarchy(Transform hierarchy, string element) {
+				// Rotate each layer to be consistent with Rhino6 import
+				hierarchy.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f) * hierarchy.localRotation;
+
+				base.ImportHierarchy(hierarchy, element);
+			}
+
+			public override string About() => "Rhinoceros 3D v6, RePort directory (https://www.rhino3d.com/download/)";
 		}
 
 		[InitializeOnLoad]
@@ -177,6 +205,8 @@ namespace Reification {
 
 				base.ImportHierarchy(hierarchy, element);
 			}
+
+			public override string About() => "Rhinoceros 3D v5, RePort directory (https://www.rhino3d.com/download/)";
 		}
 	}
 }
