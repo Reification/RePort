@@ -10,10 +10,6 @@ namespace Reification {
 		const string menuItemName = "Reification/Merge Models";
 		const int menuItemPriority = 20;
 
-		// IDEA: When this is applied to a directory instead of a GameObject
-		// search the directory for prefabs to merge and create a merged output
-		// This would make it easier for manual re-running.
-
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		static private bool Validate() {
 			if(Selection.gameObjects.Length < 2) return false;
