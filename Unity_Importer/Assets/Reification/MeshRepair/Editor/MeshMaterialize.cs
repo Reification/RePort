@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 
 namespace Reification {
   /// <summary>
@@ -41,9 +42,21 @@ namespace Reification {
         return;
       }
 
-      var root = ApplyTo(Selection.gameObjects);
+      var mergeObject = ApplyTo(Selection.gameObjects);
 
-      // TODO: Save all of the meshes somewhere
+      // Save meshes as assets external to scene
+      var scene = EditorSceneManager.GetActiveScene();
+      var meshesPath = scene.path.Substring("Assets/".Length);
+      meshesPath = meshesPath.Substring(0, meshesPath.Length - ".unity".Length);
+      meshesPath += "/Meshes";
+      EP.CreatePersistentPath(meshesPath);
+      var meshFilterList = mergeObject.GetComponentsInChildren<MeshFilter>();
+      foreach(var meshFilter in meshFilterList) {
+        var assetPath = "Assets/" + meshesPath + "/" + meshFilter.sharedMesh.name + ".asset";
+        AssetDatabase.CreateAsset(meshFilter.sharedMesh, assetPath);
+        var meshAsset = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
+        meshFilter.sharedMesh = meshAsset;
+      }
 
       // TODO: Need to name & parent the merge
     }
@@ -115,22 +128,24 @@ namespace Reification {
 				}
 
         foreach(var materialId in materialList.Keys) {
-          var gameObject = EP.Instantiate();
+          var levelObject = EP.Instantiate();
+          var material = materialList[materialId];
+          var materialLevelName = material.name + "_LOD" + lodIndex;
 
           // Create combined mesh
           var sharedMesh = new Mesh();
+          sharedMesh.name = materialLevelName;
           sharedMesh.CombineMeshes(materialMeshList[materialId].ToArray(), true, true, false);
-          var meshFilter = gameObject.AddComponent<MeshFilter>();
+          var meshFilter = levelObject.AddComponent<MeshFilter>();
           meshFilter.sharedMesh = sharedMesh;
 
           // Apply material to mesh
-          var material = materialList[materialId];
-          var meshRenderer = gameObject.AddComponent<MeshRenderer>();
+          var meshRenderer = levelObject.AddComponent<MeshRenderer>();
           meshRenderer.sharedMaterials = new Material[]{ material };
 
           // Register level of detail
           // NOTE: Merge results in only one MeshRenderer for each level of detail
-          gameObject.name = material.name + "_LOD" + lodIndex;
+          levelObject.name = materialLevelName;
           if(!lodMergeList.ContainsKey(materialId)) lodMergeList.Add(materialId, new List<LOD>());
           lodMergeList[materialId].Add(new LOD{
             renderers = new Renderer[] { meshRenderer },
@@ -142,13 +157,13 @@ namespace Reification {
       }
 
       // Create LODGroup managers for each merged material
-      var rootObject = EP.Instantiate();
+      var mergeObject = EP.Instantiate();
       foreach(var materialId in materialList.Keys) {
         var material = materialList[materialId];
-        var gameObject = EP.Instantiate();
-        EP.SetParent(gameObject.transform, rootObject.transform);
-        gameObject.name = material.name;
-        var lodGroup = gameObject.AddComponent<LODGroup>();
+        var groupObject = EP.Instantiate();
+        EP.SetParent(groupObject.transform, mergeObject.transform);
+        groupObject.name = material.name;
+        var lodGroup = groupObject.AddComponent<LODGroup>();
         var lodList = lodMergeList[materialId].ToArray();
         lodGroup.SetLODs(lodList);
         for(var lodIndex = 0; lodIndex < lodList.Length; ++lodIndex) {
@@ -156,7 +171,7 @@ namespace Reification {
           EP.SetParent(meshRenderer.transform, lodGroup.transform);
         }
 			}
-      return rootObject;
+      return mergeObject;
 		}
 
     // NOTE: GetLODIndex can be an extension
