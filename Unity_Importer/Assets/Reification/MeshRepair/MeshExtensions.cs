@@ -45,8 +45,6 @@ namespace Reification {
 			return area;
 		}
 
-		// QUESTION: Does CombineMeshes preserve material associations?
-
 		/// <summary>Computes the combined mesh in world coordinates</summary>
 		/// <remarks>
 		/// This method will ignore meshes that do not permit read access
@@ -73,7 +71,8 @@ namespace Reification {
 			return mesh;
 		}
 
-
+		// TODO: Copy should have an optional subMeshIndex argument
+		
 		/// <summary>
 		/// Assign a deep copy to this mesh
 		/// </summary>
