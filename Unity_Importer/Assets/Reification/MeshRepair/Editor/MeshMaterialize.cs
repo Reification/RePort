@@ -134,7 +134,11 @@ namespace Reification {
 
           // Create combined mesh
           var sharedMesh = new Mesh();
-          sharedMesh.name = materialLevelName;
+          var vertexCount = 0;
+          foreach(var combineInstance in materialMeshList[materialId]) vertexCount += combineInstance.mesh.vertexCount;
+          if(vertexCount > ushort.MaxValue) sharedMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+          // OPTION: Split meshes (if single meshes exceeds limit, apply a geometric split)
+          sharedMesh.name = material.name + "." + vertexCount;
           sharedMesh.CombineMeshes(materialMeshList[materialId].ToArray(), true, true, false);
           sharedMesh.Optimize();
           var meshFilter = levelObject.AddComponent<MeshFilter>();
