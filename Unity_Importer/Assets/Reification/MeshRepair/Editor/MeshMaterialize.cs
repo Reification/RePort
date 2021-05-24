@@ -136,6 +136,7 @@ namespace Reification {
           var sharedMesh = new Mesh();
           sharedMesh.name = materialLevelName;
           sharedMesh.CombineMeshes(materialMeshList[materialId].ToArray(), true, true, false);
+          sharedMesh.Optimize();
           var meshFilter = levelObject.AddComponent<MeshFilter>();
           meshFilter.sharedMesh = sharedMesh;
 
