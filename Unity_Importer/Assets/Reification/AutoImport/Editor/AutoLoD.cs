@@ -167,6 +167,8 @@ namespace Reification {
 			}
 		}
 
+		// TODO: These defaults should be extracted for use in other scripts 
+
 		// Invariant vertical screen fraction at which object will be culled
 		public static float culledLoD = 2f / 720f;
 

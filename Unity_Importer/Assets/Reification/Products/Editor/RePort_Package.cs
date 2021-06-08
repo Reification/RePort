@@ -16,6 +16,7 @@ public class RePort_Package {
 	public const string packageName = "RePort_for_Unity";
 
 	public static HashSet<string> assetPaths { get; private set; } = new HashSet<string>{
+			// Import
 			"Assets/Reification/AutoImport/Editor/RePort.cs",
 			"Assets/Reification/AutoImport/Editor/MergeModels.cs",
 			"Assets/Reification/AutoImport/Editor/GatherAssets.cs",
@@ -34,6 +35,7 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Settings/FastLightmaps.giparams",
 			"Assets/Reification/AutoImport/Settings/GoodLightmaps.giparams",
 
+			// Player
 			"Assets/Reification/AutoImport/Scripts/DragCamera.cs",
 			"Assets/Reification/AutoImport/Scripts/MovePlayer.cs",
 			"Assets/Reification/AutoImport/Scripts/ScrollHeight.cs",
@@ -43,9 +45,11 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Scripts/KeyToggleEnabled.cs",
 			"Assets/Reification/AutoImport/Prefabs/Player.prefab",
 			"Assets/Reification/AutoImport/Prefabs/Sun.prefab",
+			"Assets/Reification/AutoImport/Settings/PostProcessing.asset",
 
 			"Assets/Reification/MeshRepair/Editor/MeshInvert.cs",
-			"Assets/Reification/MeshRepair/Editor/MeshAddBackside.cs",
+			"Assets/Reification/MeshRepair/Editor/MeshBackside.cs",
+			"Assets/Reification/MeshRepair/Editor/MeshMaterialize.cs",
 			"Assets/Reification/MeshRepair/MeshExtensions.cs",
 
 			"Assets/Reification/EditorPlayer/EditorPlayer.cs",

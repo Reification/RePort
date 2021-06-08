@@ -22,6 +22,11 @@ namespace Reification {
 		[MenuItem(gameObjectMenuName, validate = false, priority = gameObjectMenuPriority)]
 		[MenuItem(menuItemName, validate = false, priority = menuItemPriority)]
 		private static void Execute() {
+			if(!EP.useEditorAction) {
+				Debug.Log("MeshInvert cannot be applied during play");
+				return;
+			}
+
 			// WARNING: Scene cannot be marked dirty during play
 			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 			Undo.IncrementCurrentGroup();

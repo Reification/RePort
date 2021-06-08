@@ -6,10 +6,10 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 
 namespace Reification {
-	public class MeshAddBackside {
-		const string menuItemName = "Reification/Add Backside %&b";
+	public class MeshBackside {
+		const string menuItemName = "Reification/Backside %&b";
 		const int menuItemPriority = 41;
-		const string gameObjectMenuName = "GameObject/Reification/Add Backside";
+		const string gameObjectMenuName = "GameObject/Reification/Backside";
 		const int gameObjectMenuPriority = 21;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
@@ -22,6 +22,11 @@ namespace Reification {
 		[MenuItem(menuItemName, validate = false, priority = menuItemPriority)]
 		[MenuItem(gameObjectMenuName, validate = false, priority = gameObjectMenuPriority)]
 		private static void Execute() {
+			if(!EP.useEditorAction) {
+				Debug.Log("MeshBackside cannot be applied during play");
+				return;
+			}
+
 			// WARNING: Scene cannot be marked dirty during play
 			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 			Undo.IncrementCurrentGroup();
