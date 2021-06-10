@@ -70,15 +70,18 @@ namespace Reification {
 		public static GameObjectType GetGameObjectType(GameObject gameObject) {
 			if(!gameObject) return GameObjectType.Nothing;
 
-			// Non-empty when gameObject is an asset
-			// NOTE: if(prefab) assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(prefab)
-			var assetPath = AssetDatabase.GetAssetPath(gameObject);
-			if(assetPath.Length > 0) return GameObjectType.Persistent;
+			if(useEditorAction) {
+#if UNITY_EDITOR
+				// Non-empty when gameObject is an asset
+				// NOTE: if(prefab) assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(prefab)
+				var assetPath = AssetDatabase.GetAssetPath(gameObject);
+				if(assetPath.Length > 0) return GameObjectType.Persistent;
 
-			// Non-null when gameObject is an instantiated prefab
-			var prefab = PrefabUtility.GetNearestPrefabInstanceRoot(gameObject);
-			if(prefab && !PrefabUtility.IsAddedGameObjectOverride(gameObject)) return GameObjectType.Connected;
-
+				// Non-null when gameObject is an instantiated prefab
+				var prefab = PrefabUtility.GetNearestPrefabInstanceRoot(gameObject);
+				if(prefab && !PrefabUtility.IsAddedGameObjectOverride(gameObject)) return GameObjectType.Connected;
+#endif
+			}
 			return GameObjectType.Instance;
 		}
 
@@ -101,14 +104,13 @@ namespace Reification {
 			}
 		}
 
+#if UNITY_EDITOR
 		// WARNING: If there is a name override, PathName will not resolve!
-
 		// TODO: Find a way to clone prefab with overrides intact.
 		// QUESTION: Is there a way to accomplish instatiation using object serializations?
 		// Ideally, this would handle the connection and override persistence.
 		// https://docs.unity3d.com/ScriptReference/SerializedObject.html
 		// Construct, then iterate & copy?
-
 		static GameObject InstantiateChild(GameObject original, GameObject parent) {
 			GameObject child = null;
 			// IMPORTANT: PrefabUtility.InstantiatePrefab applies only to assets, not to instances
@@ -137,6 +139,7 @@ namespace Reification {
 			}
 			return child;
 		} 
+#endif
 
 		/// <summary>Instantiate, with prefab linking and undo support</summary>
 		/// <remarks>
