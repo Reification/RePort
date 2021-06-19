@@ -27,12 +27,16 @@ namespace Reification {
 		/// <param name="subMeshIndex">Index of submesh, or all submeshes if defaulted</param>
 		/// <remarks>
 		/// When there are more materials than submeshes the final subMesh will be rendered with multiple materials.
-		/// Therefore if subMeshIndex > subMeshCount - 1 it will be clamped to subMeshCount - 1. 
+		/// Therefore if subMeshIndex > subMeshCount - 1 it will be clamped to subMeshCount - 1.
+		/// WARNING: This assumes a Triangles mesh topology
 		/// </remarks>
 		public static float WorldArea(this MeshFilter meshFilter, int subMeshIndex = -1) {
 			var meshIndex = Mathf.Min(meshFilter.sharedMesh.subMeshCount - 1, subMeshIndex);
 			var triangles = subMeshIndex < 0 ? meshFilter.sharedMesh.triangles : meshFilter.sharedMesh.GetTriangles(meshIndex);
 			var vertices = meshFilter.sharedMesh.vertices;
+
+			// TODO: Verify that a triangle topology is in use
+			// A better approach would be to adapt to each topology
 
 			// Compute mesh surface area
 			var area = 0f;
@@ -71,7 +75,7 @@ namespace Reification {
 			return mesh;
 		}
 
-		// TODO: Copy should have an optional subMeshIndex argument
+		// TODO: A Separated() method that splits submeshes into separate objects
 		
 		/// <summary>
 		/// Assign a deep copy to this mesh
@@ -88,7 +92,13 @@ namespace Reification {
 			mesh.vertices = copyFrom.vertices;
 			mesh.subMeshCount = copyFrom.subMeshCount;
 			for(int subMesh = 0; subMesh < copyFrom.subMeshCount; ++subMesh) {
-				mesh.SetIndices(copyFrom.GetIndices(subMesh), copyFrom.GetTopology(subMesh), subMesh, true, (int)copyFrom.GetBaseVertex(subMesh));
+				mesh.SetIndices(
+					copyFrom.GetIndices(subMesh),
+					copyFrom.GetTopology(subMesh),
+					subMesh,
+					true,
+					(int)copyFrom.GetBaseVertex(subMesh)
+				);
 			}
 
 			mesh.boneWeights = copyFrom.boneWeights;
@@ -116,10 +126,15 @@ namespace Reification {
 		/// <summary>
 		/// Invert the orientation of a mesh
 		/// </summary>
+		/// <remarks>
+		/// WARNING: This assumes a Triangles mesh topology
+		/// </remarks>
 		public static Mesh Inverted(this Mesh mesh) {
-			// TODO: Ensure that mesh is editable
 			var inverted = new Mesh();
 			inverted.Copy(mesh);
+
+			// TODO: Handle each topology separately when inverting
+
 			var triangles = inverted.triangles;
 			for(int trianglesIndex = 0; trianglesIndex < mesh.triangles.Length; trianglesIndex += 3) {
 				// TODO: Modify this based on mesh topology type
@@ -130,12 +145,29 @@ namespace Reification {
 			}
 			inverted.triangles = triangles;
 
-			inverted.RecalculateBounds();
+			// FIXME: Copy the normals (negated)
+			// FIXME: Copy the tangents (negated??)
+			// GOAL: The same bump map should be inverted when viewed from the backside
+			// The tangents and binormals are generally aligned with the normalmap texture coordinates
+			// but are specifically interpolated to define the basis for the normal deviation,
+			// so both should be negated for the backside (the normal and tangent are negated, including tangent w)
+			// NOTE: Using the same UVs will yield the desired texture lookups
 			inverted.RecalculateNormals();
 			inverted.RecalculateTangents();
 
+			// NOTE: Do not optimize so that vertex order remains consistent
+			inverted.RecalculateBounds();
+
 			return inverted;
 		}
+
+		// FIXME: Check for backside created by AddBackSide
+		// NOTE: Since the backside is a submesh, look for:
+		// - an even number of submeshes (that are triangle / quad topologies)
+		// - with an equal number of vertices
+		// - where the normals are negated
+		// NOTE: Vertices must be separate because normals & tangents are different
+
 
 		// Specified lightmap UV channel is 2
 		// https://docs.unity3d.com/462/Documentation/Manual/LightmappingUV.html
@@ -143,12 +175,21 @@ namespace Reification {
 		// https://docs.unity3d.com/2019.2/Documentation/ScriptReference/Mesh.html
 		const int lightmapUVChannel = 1;
 
-		public static Mesh AddBackside(this Mesh mesh) {
-			// TODO: Ensure that mesh is editable
-
+		/// <summary>
+		/// Add a backside to a mesh
+		/// </summary>
+		/// <remarks>
+		/// WARNING: This assumes that no backsides currently exist
+		/// WARNING: This assumes a Triangles mesh topology
+		/// </remarks>
+		/// <param name="mesh"></param>
+		/// <returns></returns>
+		public static Mesh AddBackSide(this Mesh mesh) {
 			var back = mesh.Inverted();
+			// NOTE: Vertices cannot be re-used for triangles,
+			// because normals and tangents are different.
 
-			// Shift original UVs to lower quadrant
+			// Shift original lightmap UVs to lower quadrant
 			var meshLightmapUVs = new List<Vector2>();
 			mesh.GetUVs(lightmapUVChannel, meshLightmapUVs);
 			for(int uvIndex = 0; uvIndex < meshLightmapUVs.Count; ++uvIndex) {
@@ -156,6 +197,9 @@ namespace Reification {
 				meshLightmapUVs[uvIndex] = uv * 0.5f;
 			}
 			mesh.SetUVs(lightmapUVChannel, meshLightmapUVs);
+
+			// QUESTION: Is it possible to simply place UVs side-by-side without rescaling?
+			// Or... could the UVs be recomputed using Unwrapping.GeneratePerTriangleUV?
 
 			// Shift backside UVs to upper quadrant
 			var backLightmapUVs = new List<Vector2>();
@@ -176,7 +220,6 @@ namespace Reification {
 		}
 
 		// TODO: Oriented : unifies the orientation of each connected mesh
-		// PROBLEM: This requires 
 
 		// TODO: Separated : splits mesh into unconnected parts.
 		// This can use the mesh filter since the individual meshes will correspond to materials
@@ -187,6 +230,7 @@ namespace Reification {
 			Unreadable,
 			UnreadableAndUploadedToGPU
 		}
+
 		/// <summary>
 		/// sets mesh asset readability.
 		/// </summary>

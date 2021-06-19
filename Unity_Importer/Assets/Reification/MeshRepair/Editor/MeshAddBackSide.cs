@@ -6,10 +6,10 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 
 namespace Reification {
-	public class MeshBackside {
-		const string menuItemName = "Reification/Backside %&b";
+	public class MeshAddBackSide {
+		const string menuItemName = "Reification/Add Backside %&b";
 		const int menuItemPriority = 41;
-		const string gameObjectMenuName = "GameObject/Reification/Backside";
+		const string gameObjectMenuName = "GameObject/Reification/Add Backside";
 		const int gameObjectMenuPriority = 21;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
@@ -30,7 +30,7 @@ namespace Reification {
 			// WARNING: Scene cannot be marked dirty during play
 			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 			Undo.IncrementCurrentGroup();
-			Undo.SetCurrentGroupName("Mesh/Add Backside");
+			Undo.SetCurrentGroupName("MeshAddBackSide");
 
 			var selectionList = Selection.gameObjects;
 			foreach(var selection in selectionList) SearchAt(selection);
@@ -54,7 +54,9 @@ namespace Reification {
 			if(!meshFilter) return;
 			var sharedMesh = meshFilter.sharedMesh;
 			if(!sharedMesh) return;
-			sharedMesh.Copy(sharedMesh.AddBackside());
+
+			// FIXME: Check if mesh asset is non-modifiable, and create a copy in that case
+			sharedMesh.Copy(sharedMesh.AddBackSide());
 
 			// Replicate materials on backside submeshes
 			var meshRenderer = gameObject.GetComponent<MeshRenderer>();
