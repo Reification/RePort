@@ -52,6 +52,7 @@ public class RePort_Package {
 			"Assets/Reification/MeshRepair/Editor/MeshMaterialize.cs",
 			"Assets/Reification/MeshRepair/Editor/MeshInvert.cs",
 			"Assets/Reification/MeshRepair/Editor/MeshAddBackSide.cs",
+			"Assets/Reification/MeshRepair/Editor/MeshGetTopSide.cs",
 
 			// General
 			"Assets/Reification/EditorPlayer/EditorPlayer.cs",

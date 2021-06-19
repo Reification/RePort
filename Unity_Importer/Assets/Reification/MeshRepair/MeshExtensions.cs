@@ -1,6 +1,7 @@
 ﻿// Copyright 2021 Reification Incorporated
 // Licensed under Apache 2.0. All Rights reserved.
 
+using System.Collections;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -48,6 +49,14 @@ namespace Reification {
 			}
 			return area;
 		}
+
+		// TODO: SideArea = surface area visible from one side, without overlap checking
+		// NOTE: This is needed for improved LOD thresholds
+		// NOTE: Fractional area calculation can also be used for SingleSide triangle identification
+
+
+		// WARNING: Attempting to modify to meshes during play yields "Invalid AABB" errors
+		// In particular, adding backsides to meshes with backed lighting
 
 		/// <summary>Computes the combined mesh in world coordinates</summary>
 		/// <remarks>
@@ -217,6 +226,123 @@ namespace Reification {
 			addBackside.CombineMeshes(combineList, false, false, false);
 
 			return addBackside;
+		}
+
+		/// <summary>
+		/// Create a mesh of only the triangles that are in the same direction as the side vector
+		/// </summary>
+		/// <remarks>
+		/// WARNING: This assumes a Triangles mesh topology
+		/// Before applying lightmaps to this mesh apply Unwrapping.GenerateSecondaryUVSet().
+		/// </remarks>
+		/// <param name="mesh">Original mesh</param>
+		/// <param name="localSide">Normal vector in mesh (local) coordinates of mesh side</param>
+		/// <returns></returns>
+		public static Mesh GetSingleSide(this Mesh mesh, Vector3 localSide) {
+			// Create a mesh of only the normal side triangles
+			var sideMesh = new Mesh();
+			sideMesh.indexFormat = mesh.indexFormat;
+			{
+				var vertices = mesh.vertices;
+				var triangles = mesh.triangles;
+
+				// Identify vertices to keep
+				var verticesKeep = new BitArray(vertices.Length, false);
+				var trianglesKeep = new BitArray(triangles.Length / 3, false);
+				var sideTrianglesCount = 0;
+				for(int trianglesIndex = 0; trianglesIndex * 3 < triangles.Length; ++trianglesIndex) {
+					var verticesIndices = new int[3];
+					var triangleVertices = new Vector3[3];
+					var trianglesCornerIndex = trianglesIndex * 3;
+					for(var offset = 0; offset < 3; ++offset) {
+						verticesIndices[offset] = triangles[trianglesCornerIndex + offset];
+						triangleVertices[offset] = vertices[verticesIndices[offset]];
+					}
+
+					// FIXME: This assumes a uniform triangle topology
+					// Ideally, each submesh topology would be handled separately
+					// NOTE: Only Triangles and Quads have orientations
+
+					var triangleNormal = Vector3.Cross(
+						triangleVertices[1] - triangleVertices[0],
+						triangleVertices[2] - triangleVertices[0]
+					);
+					if(Vector3.Dot(triangleNormal, localSide) <= 0f) continue;
+
+					for(var offset = 0; offset < 3; ++offset) {
+						verticesKeep[verticesIndices[offset]] = true;
+					}
+					trianglesKeep[trianglesIndex] = true;
+					++sideTrianglesCount;
+				}
+
+				// Create a maps between vertices to normalVertices
+				var toSideIndex = new Dictionary<int, int>();
+				var fromSideIndex = new Dictionary<int, int>();
+				for(var verticesIndex = 0; verticesIndex < vertices.Length; ++verticesIndex) {
+					if(!verticesKeep[verticesIndex]) continue;
+
+					var sideVerticesIndex = toSideIndex.Count;
+					toSideIndex[verticesIndex] = sideVerticesIndex;
+					fromSideIndex[sideVerticesIndex] = verticesIndex;
+				}
+
+				// Create the single side vertices, normals and tangents arrays
+				{
+					var normals = mesh.normals;
+					var tangents = mesh.tangents;
+					var sideVertices = new Vector3[toSideIndex.Count];
+					var sideNormals = new Vector3[toSideIndex.Count];
+					var sideTangents = new Vector4[toSideIndex.Count];
+					for(var sideVerticesIndex = 0; sideVerticesIndex < sideVertices.Length; ++sideVerticesIndex) {
+						var verticesIndex = fromSideIndex[sideVerticesIndex];
+						sideVertices[sideVerticesIndex] = vertices[verticesIndex];
+						sideNormals[sideVerticesIndex] = normals[verticesIndex];
+						sideTangents[sideVerticesIndex] = tangents[verticesIndex];
+					}
+					sideMesh.vertices = sideVertices;
+					sideMesh.normals = sideNormals;
+					sideMesh.tangents = sideTangents;
+				}
+
+				// Copy the UVs so that texture lookup is preserved
+				// Maximum of 8 channels
+				// https://docs.unity3d.com/ScriptReference/Mesh.SetUVs.html
+				for(int channel = 0; channel < 8; ++channel) {
+					var meshUVs = new List<Vector2>();
+					mesh.GetUVs(channel, meshUVs);
+					var sideMeshUVs = new Vector2[sideMesh.vertexCount];
+					for(var uvIndex = 0; uvIndex < meshUVs.Count; ++uvIndex) {
+						if(!verticesKeep[uvIndex]) continue;
+						sideMeshUVs[toSideIndex[uvIndex]] = meshUVs[uvIndex];
+					}
+					sideMesh.SetUVs(channel, sideMeshUVs);
+				}
+
+				// TODO: Instead of just copying triangles, create the submesh index arrays
+				// NOTE: Each submesh index array would need to be handled separately
+
+				// Create the single side triangle array
+				{
+					var sideTriangles = new int[sideTrianglesCount * 3];
+					var sideTrianglesIndex = 0;
+					for(var trianglesIndex = 0; trianglesIndex * 3 < triangles.Length; ++trianglesIndex) {
+						if(!trianglesKeep[trianglesIndex]) continue;
+
+						var trianglesCornerIndex = trianglesIndex * 3;
+						var sideTrianglesCornerIndex = sideTrianglesIndex * 3;
+						for(var offset = 0; offset < 3; ++offset) {
+							sideTriangles[sideTrianglesCornerIndex + offset] = toSideIndex[triangles[trianglesCornerIndex + offset]];
+						}
+						++sideTrianglesIndex;
+					}
+					sideMesh.triangles = sideTriangles;
+				}
+			}
+
+			sideMesh.Optimize();
+			sideMesh.RecalculateBounds();
+			return sideMesh;
 		}
 
 		// TODO: Oriented : unifies the orientation of each connected mesh
