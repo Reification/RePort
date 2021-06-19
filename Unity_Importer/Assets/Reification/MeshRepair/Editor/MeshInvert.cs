@@ -8,9 +8,9 @@ using UnityEditor.SceneManagement;
 namespace Reification {
 	public class MeshInvert {
 		const string menuItemName = "Reification/Invert %&i";
-		const int menuItemPriority = 40;
+		const int menuItemPriority = 41;
 		const string gameObjectMenuName = "GameObject/Reification/Invert";
-		const int gameObjectMenuPriority = 20;
+		const int gameObjectMenuPriority = 21;
 
 		[MenuItem(gameObjectMenuName, validate = true, priority = gameObjectMenuPriority)]
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
@@ -30,7 +30,7 @@ namespace Reification {
 			// WARNING: Scene cannot be marked dirty during play
 			EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 			Undo.IncrementCurrentGroup();
-			Undo.SetCurrentGroupName("Mesh/Invert");
+			Undo.SetCurrentGroupName("MeshInvert");
 
 			var selectionList = Selection.gameObjects;
 			foreach(var selection in selectionList) SearchAt(selection);

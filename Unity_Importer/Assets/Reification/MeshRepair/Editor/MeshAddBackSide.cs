@@ -8,9 +8,9 @@ using UnityEditor.SceneManagement;
 namespace Reification {
 	public class MeshAddBackSide {
 		const string menuItemName = "Reification/Add Backside %&b";
-		const int menuItemPriority = 41;
+		const int menuItemPriority = 42;
 		const string gameObjectMenuName = "GameObject/Reification/Add Backside";
-		const int gameObjectMenuPriority = 21;
+		const int gameObjectMenuPriority = 22;
 
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		[MenuItem(gameObjectMenuName, validate = true, priority = gameObjectMenuPriority)]
