@@ -37,7 +37,8 @@ namespace Reification {
 			foreach(var gameObject in Selection.gameObjects) ApplyTo(gameObject);
 		}
 
-		public static float sampleSize = 1f; // (meters) length of equilateral triangle side
+		// TODO: Make this an adjustable parameter
+		public static float sampleSize = 2f; // (meters) length of equilateral triangle side
 
 		public static GameObject ApplyTo(GameObject gameObject) {
 			var meshCollider = gameObject.GetComponent<MeshCollider>();
