@@ -381,12 +381,12 @@ namespace Reification {
 			if(sharedMesh.vertexCount < 3) return resample;
 
 			// Define conversion from local coordinates to basis coordinates
+			// NOTE: basis * basisCoord = worldCoord so inverse must be applied
 			var basis = Matrix4x4.identity;
 			basis.SetColumn(0, new Vector4(stepX.x, stepX.y, stepX.z, 0));
 			basis.SetColumn(1, new Vector4(stepY.x, stepY.y, stepY.z, 0));
 			basis.SetColumn(2, new Vector4(castZ.x, castZ.y, castZ.z, 0));
 			var localToBasis = basis.inverse * meshCollider.transform.localToWorldMatrix;
-			Debug.Log("localToBasis =\n" + localToBasis.ToString());
 
 			// Compute mesh bounds in basis coordintes
 			Vector3 basisMin;
@@ -425,15 +425,16 @@ namespace Reification {
 				for(var y = 0; y < countY; ++y) {
 					// Raycast
 					if(
-						!Physics.Raycast(origin + stepX * x + stepY * y + offset, -offset, out var hitInfo, maxDistance, layerMask, queryTriggerInteraction) /*||
-						hitInfo.collider != meshCollider*/
+						!Physics.Raycast(origin + stepX * x + stepY * y + offset, -offset, out var hitInfo, maxDistance, layerMask, queryTriggerInteraction) ||
+						hitInfo.collider != meshCollider
 					) {
-						Debug.DrawLine(origin + stepX * x + stepY * y + offset, origin + stepX * x + stepY * y, Color.red, 10f);
+						// Drop the cast vertex
+						//Debug.DrawLine(origin + stepX * x + stepY * y + offset, origin + stepX * x + stepY * y, Color.red, 10f);
 						castToKeep[x * countY + y] = -1;
 						continue;
 					};
-					Debug.DrawLine(origin + stepX * x + stepY * y + offset, hitInfo.point, Color.green, 10f);
-					// Keep the vertex
+					// Keep the cast vertex
+					//Debug.DrawLine(origin + stepX * x + stepY * y + offset, hitInfo.point, Color.green, 10f);
 					castToKeep[x * countY + y] = keepPoints.Count;
 					keepPoints.Add(worldToLocal.MultiplyPoint3x4(hitInfo.point));
 					keepCoords.Add(hitInfo.textureCoord);

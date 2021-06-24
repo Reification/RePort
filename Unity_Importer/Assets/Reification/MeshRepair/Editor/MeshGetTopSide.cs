@@ -37,8 +37,7 @@ namespace Reification {
 			foreach(var gameObject in Selection.gameObjects) ApplyTo(gameObject);
 		}
 
-		// QUESTION: Should there be an analog of SearchAt?
-		// Presumably all LOD0 meshes should be used for the topside construction?
+		public static float sampleSize = 1f; // (meters) length of equilateral triangle side
 
 		public static GameObject ApplyTo(GameObject gameObject) {
 			var meshFilter = gameObject.GetComponent<MeshFilter>();
@@ -47,11 +46,17 @@ namespace Reification {
 			if(!sharedMesh) return null;
 
 			// Create a top-side mesh
+			/*
 			var localTop = gameObject.transform.InverseTransformDirection(Vector3.up);
 			var topMesh = sharedMesh.GetSingleSide(localTop);
+			*/
+			var meshCollider = gameObject.GetComponent<MeshCollider>();
+			var hasMeshCollider = !!meshCollider;
+			if(!hasMeshCollider) meshCollider = EP.AddComponent<MeshCollider>(gameObject);
+			var topMesh = meshCollider.GetResample(Quaternion.Euler(0f, 0f, 0f) * Vector3.right, Quaternion.Euler(0f, -60f, 0f) * Vector3.right, Vector3.up);
 			topMesh.name = sharedMesh.name + " top";
+			if(!hasMeshCollider) EP.Destroy(meshCollider);
 
-			// TODO: Resample
 
 			// Create sibling game object
 			var topSide = EP.Instantiate();
