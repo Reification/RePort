@@ -470,6 +470,9 @@ namespace Reification {
 			resample.triangles = castFaces.ToArray();
 			resample.uv = keepCoords.ToArray();
 			resample.Optimize();
+			resample.RecalculateBounds();
+			resample.RecalculateNormals();
+			resample.RecalculateTangents();
 			return resample;
 		}
 
