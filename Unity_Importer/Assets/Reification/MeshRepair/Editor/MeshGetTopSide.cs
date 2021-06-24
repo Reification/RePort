@@ -40,23 +40,34 @@ namespace Reification {
 		public static float sampleSize = 1f; // (meters) length of equilateral triangle side
 
 		public static GameObject ApplyTo(GameObject gameObject) {
-			var meshFilter = gameObject.GetComponent<MeshFilter>();
-			if(!meshFilter) return null;
-			var sharedMesh = meshFilter.sharedMesh;
-			if(!sharedMesh) return null;
+			var meshCollider = gameObject.GetComponent<MeshCollider>();
+			var hasMeshCollider = !!meshCollider;
+			if(!hasMeshCollider) {
+				var filter = gameObject.GetComponent<MeshFilter>();
+				if(!filter) return null;
+				if(!filter.sharedMesh) return null;
+				meshCollider = EP.AddComponent<MeshCollider>(gameObject);
+				meshCollider.sharedMesh = filter.sharedMesh;
+			}
+			if(!meshCollider.sharedMesh) return null;
 
 			// Create a top-side mesh
 			/*
 			var localTop = gameObject.transform.InverseTransformDirection(Vector3.up);
 			var topMesh = sharedMesh.GetSingleSide(localTop);
 			*/
-			var meshCollider = gameObject.GetComponent<MeshCollider>();
-			var hasMeshCollider = !!meshCollider;
-			if(!hasMeshCollider) meshCollider = EP.AddComponent<MeshCollider>(gameObject);
-			var topMesh = meshCollider.GetResample(Quaternion.Euler(0f, 0f, 0f) * Vector3.right, Quaternion.Euler(0f, -60f, 0f) * Vector3.right, Vector3.up);
-			topMesh.name = sharedMesh.name + " top";
+			var stepX = Vector3.right * sampleSize;
+			var stepY = Quaternion.Euler(0f, -60f, 0f) * stepX;
+			var topMesh = meshCollider.GetResample(stepX, stepY, Vector3.up);
+			topMesh.name = meshCollider.sharedMesh.name + " top";
+
 			if(!hasMeshCollider) EP.Destroy(meshCollider);
 
+			// Save mesh asset
+			var topMeshPath = AssetDatabase.GetAssetPath(meshCollider.sharedMesh);
+			if(topMeshPath == null || !topMeshPath.StartsWith("Assets/")) topMeshPath = EditorSceneManager.GetActiveScene().path;
+			topMeshPath = topMeshPath.Substring(0, topMeshPath.LastIndexOf('/')) + "/" + topMesh.name + ".asset";
+			AssetDatabase.CreateAsset(topMesh, topMeshPath);
 
 			// Create sibling game object
 			var topSide = EP.Instantiate();
@@ -66,7 +77,8 @@ namespace Reification {
 			topSide.transform.localRotation = gameObject.transform.localRotation;
 			topSide.transform.localScale = gameObject.transform.localScale;
 
-			meshFilter = topSide.AddComponent<MeshFilter>();
+			// Reference the topside mesh
+			var meshFilter = topSide.AddComponent<MeshFilter>();
 			meshFilter.sharedMesh = topMesh;
 
 			// Make the new object visible
