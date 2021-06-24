@@ -54,9 +54,8 @@ namespace Reification {
 		// NOTE: This is needed for improved LOD thresholds
 		// NOTE: Fractional area calculation can also be used for SingleSide triangle identification
 
-
-		// WARNING: Attempting to modify to meshes during play yields "Invalid AABB" errors
-		// In particular, adding backsides to meshes with backed lighting
+		// WARNING: Attempting to modify to static meshes during play yields "Invalid AABB" errors
+		// In particular, adding backsides to meshes with baked lighting yields this error.
 
 		/// <summary>Computes the combined mesh in world coordinates</summary>
 		/// <remarks>
@@ -160,6 +159,7 @@ namespace Reification {
 			// The tangents and binormals are generally aligned with the normalmap texture coordinates
 			// but are specifically interpolated to define the basis for the normal deviation,
 			// so both should be negated for the backside (the normal and tangent are negated, including tangent w)
+			// https://docs.unity3d.com/ScriptReference/Mesh-tangents.html
 			// NOTE: Using the same UVs will yield the desired texture lookups
 			inverted.RecalculateNormals();
 			inverted.RecalculateTangents();
@@ -233,7 +233,7 @@ namespace Reification {
 		/// </summary>
 		/// <remarks>
 		/// WARNING: This assumes a Triangles mesh topology
-		/// Before applying lightmaps to this mesh apply Unwrapping.GenerateSecondaryUVSet().
+		/// WARNING: Before applying lightmaps to this mesh apply Unwrapping.GenerateSecondaryUVSet().
 		/// </remarks>
 		/// <param name="mesh">Original mesh</param>
 		/// <param name="localSide">Normal vector in mesh (local) coordinates of mesh side</param>
@@ -275,6 +275,12 @@ namespace Reification {
 					trianglesKeep[trianglesIndex] = true;
 					++sideTrianglesCount;
 				}
+
+				// FIXME: Remapping to a subset of vertices can be separated out
+				// NOTE: The implementation can assume that every surface primitive is complete in the set
+				// this allows any triangles array to be remapped with element discards (slower, but general)
+				// NOTE: Alternatively, begin with the triangles array keep bitarray, then derive vertices.
+				// This is needed for the boundary extraction.
 
 				// Create a maps between vertices to normalVertices
 				var toSideIndex = new Dictionary<int, int>();
@@ -343,6 +349,127 @@ namespace Reification {
 			sideMesh.Optimize();
 			sideMesh.RecalculateBounds();
 			return sideMesh;
+		}
+
+		/// <summary>
+		/// Create a mesh by resampling with a regular spacing using physics raycasting in scene
+		/// </summary>
+		/// <remarks>
+		/// The resampling occurs in the context of a scene, so it can be blocked by other active objects.
+		/// A mesh collider is required, and the resampling will be subject to its convexity, layer, and trigger configuration.
+		/// The resampling ignores the original mesh topology, so details with projected extents less than the sampling may be covered.
+		/// The resampling partititions each quad on an edge from +stepX to +stepY, so the angle from stepX to stepY should be 60deg.
+		/// NOTE: The resampled mesh will be in the same coordinates as the original mesh.
+		/// NOTE: The raycasting will create a new UV map based on the hit locations in the original UV space.
+		/// NOTE: The resulting mesh triangles have constant projected area, but surface inclines may cause the actual area to be irregular.
+		/// </remarks>
+		/// <param name="meshCollider">Collider to be sampled by raycasting</param>
+		/// <param name="stepX">Sample spacing in first direction (alignment rounds inward)</param>
+		/// <param name="stepY">Sample spacing in second direction (alignment rounds inward)</param>
+		/// <param name="castZ">Negative of raycast direction, with magnitude added to bounds</param>
+		/// <param name="layerMask">Raycast layerMask argument</param>
+		/// <param name="queryTriggerInteraction">Raycast queryTriggerInteraction argument</param>
+		/// <returns></returns>
+		public static Mesh GetResample(
+			this MeshCollider meshCollider, Vector3 stepX, Vector3 stepY, Vector3 castZ,
+			int layerMask = Physics.DefaultRaycastLayers, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.UseGlobal
+		) {
+			var resample = new Mesh();
+
+			var sharedMesh = meshCollider.sharedMesh;
+			if(!sharedMesh) return null;
+			if(sharedMesh.vertexCount < 3) return resample;
+
+			// Define conversion from local coordinates to basis coordinates
+			var basis = Matrix4x4.identity;
+			basis.SetColumn(0, new Vector4(stepX.x, stepX.y, stepX.z, 0));
+			basis.SetColumn(1, new Vector4(stepY.x, stepY.y, stepY.z, 0));
+			basis.SetColumn(2, new Vector4(castZ.x, castZ.y, castZ.z, 0));
+			var localToBasis = basis.inverse * meshCollider.transform.localToWorldMatrix;
+			Debug.Log("localToBasis =\n" + localToBasis.ToString());
+
+			// Compute mesh bounds in basis coordintes
+			Vector3 basisMin;
+			Vector3 basisMax;
+			{
+				var vertices = sharedMesh.vertices;
+				basisMin = localToBasis.MultiplyPoint3x4(vertices[0]);
+				basisMax = basisMin;
+				for(var v = 1; v < vertices.Length; ++v) {
+					var basisPoint = localToBasis.MultiplyPoint3x4(vertices[v]);
+					for(var i = 0; i < 3; ++i) {
+						if(basisMin[i] > basisPoint[i]) basisMin[i] = basisPoint[i];
+						if(basisMax[i] < basisPoint[i]) basisMax[i] = basisPoint[i];
+					}
+				}
+			}
+
+			// Compute resample counts and origin (rounding down)
+			var basisMid = (basisMax + basisMin) / 2f;
+			var worldMid = stepX * basisMid.x + stepY * basisMid.y + castZ * basisMid.z;
+			var basisBox = basisMax - basisMin;
+			var countX = Mathf.FloorToInt(basisBox.x);
+			var countY = Mathf.FloorToInt(basisBox.y);
+			var offset = (basisBox.z + 2f) * castZ;
+			var origin = worldMid - (stepX * countX + stepY * countY + offset) / 2f;
+			var maxDistance = offset.magnitude;
+
+			Debug.DrawRay(origin, stepX * countX + stepY * countY + offset, Color.white, 10f);
+
+			// Resample the mesh
+			var worldToLocal = meshCollider.transform.worldToLocalMatrix;
+			var castToKeep = new int[countX * countY];
+			var keepPoints = new List<Vector3>();
+			var keepCoords = new List<Vector2>();
+			for(var x = 0; x < countX; ++x) {
+				for(var y = 0; y < countY; ++y) {
+					// Raycast
+					if(
+						!Physics.Raycast(origin + stepX * x + stepY * y + offset, -offset, out var hitInfo, maxDistance, layerMask, queryTriggerInteraction) /*||
+						hitInfo.collider != meshCollider*/
+					) {
+						Debug.DrawLine(origin + stepX * x + stepY * y + offset, origin + stepX * x + stepY * y, Color.red, 10f);
+						castToKeep[x * countY + y] = -1;
+						continue;
+					};
+					Debug.DrawLine(origin + stepX * x + stepY * y + offset, hitInfo.point, Color.green, 10f);
+					// Keep the vertex
+					castToKeep[x * countY + y] = keepPoints.Count;
+					keepPoints.Add(worldToLocal.MultiplyPoint3x4(hitInfo.point));
+					keepCoords.Add(hitInfo.textureCoord);
+				}
+			}
+
+			var castFaces = new List<int>();
+			for(var x = 0; x < countX - 1; ++x) {
+				for(var y = 0; y < countY - 1; ++y) {
+					// Each casting vertex in the grid (with two edges removed) corresponds 2 triangles from 4 grid coordinates:
+					// (1) V+X [2] -> V [0] -> V+Y [1]
+					// (2) V+Y [1] -> V+X+Y [3] -> V+X [2]
+					// Index the vertices as 2*x + y
+					var quadIndices = new int[4];
+					quadIndices[0] = castToKeep[x * countY + y];
+					quadIndices[1] = castToKeep[x * countY + (y + 1)];
+					quadIndices[2] = castToKeep[(x + 1) * countY + y];
+					quadIndices[3] = castToKeep[(x + 1) * countY + (y + 1)];
+					if(quadIndices[2] >= 0 && quadIndices[0] >= 0 && quadIndices[1] >= 0) {
+						castFaces.Add(quadIndices[2]);
+						castFaces.Add(quadIndices[0]);
+						castFaces.Add(quadIndices[1]);
+					}
+					if(quadIndices[1] >= 0 && quadIndices[3] >= 0 && quadIndices[2] >= 0) {
+						castFaces.Add(quadIndices[1]);
+						castFaces.Add(quadIndices[3]);
+						castFaces.Add(quadIndices[2]);
+					}
+				}
+			}
+
+			resample.vertices = keepPoints.ToArray();
+			resample.triangles = castFaces.ToArray();
+			resample.uv = keepCoords.ToArray();
+			resample.Optimize();
+			return resample;
 		}
 
 		// TODO: Oriented : unifies the orientation of each connected mesh
