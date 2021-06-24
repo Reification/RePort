@@ -206,7 +206,7 @@ namespace Reification {
 			if(useEditorAction) {
 #if UNITY_EDITOR
 				if(useEditorUndo) {
-					Undo.SetTransformParent(child, parent, "SetParent(" + child.name + "," + parent.name + ")");
+					Undo.SetTransformParent(child, parent, "SetParent(" + child.name + "," + (parent ? parent.name : "null") + ")");
 
 					if(child.parent != parent) {
 						var parent_in_prefab = PrefabUtility.IsPartOfPrefabAsset(parent);
