@@ -374,11 +374,8 @@ namespace Reification {
 			this MeshCollider meshCollider, Vector3 stepX, Vector3 stepY, Vector3 castZ,
 			int layerMask = Physics.DefaultRaycastLayers, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.UseGlobal
 		) {
-			var resample = new Mesh();
-
 			var sharedMesh = meshCollider.sharedMesh;
 			if(!sharedMesh) return null;
-			if(sharedMesh.vertexCount < 3) return resample;
 
 			// Define conversion from local coordinates to basis coordinates
 			// NOTE: basis * basisCoord = worldCoord so inverse must be applied
@@ -414,7 +411,10 @@ namespace Reification {
 			var origin = worldMid - (stepX * countX + stepY * countY + offset) / 2f;
 			var maxDistance = offset.magnitude;
 
-			Debug.DrawRay(origin, stepX * countX + stepY * countY + offset, Color.white, 10f);
+			var resample = new Mesh();
+			if(countX * countY < System.UInt16.MaxValue) resample.indexFormat = UnityEngine.Rendering.IndexFormat.UInt16;
+			else resample.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+			// TODO: Catch higher index counts and do something...
 
 			// Resample the mesh
 			var worldToLocal = meshCollider.transform.worldToLocalMatrix;
