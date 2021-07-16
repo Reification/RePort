@@ -7,11 +7,11 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 
 namespace Reification {
-  public class MeshGetTopSide {
-    const string menuItemName = "Reification/Get Topside %&t";
-    const int menuItemPriority = 43;
-    const string gameObjectMenuName = "GameObject/Reification/Get Topside";
-    const int gameObjectMenuPriority = 23;
+	public class MeshGetTopSide {
+		const string menuItemName = "Reification/Get Topside %&t";
+		const int menuItemPriority = 43;
+		const string gameObjectMenuName = "GameObject/Reification/Get Topside";
+		const int gameObjectMenuPriority = 23;
 
 		// Menu action creates a visible object & saves the mesh, then new object is selected
 
@@ -19,7 +19,9 @@ namespace Reification {
 		[MenuItem(gameObjectMenuName, validate = true, priority = gameObjectMenuPriority)]
 		private static bool Validate() {
 			if(!EP.useEditorAction) return false;
-			return Selection.gameObjects.Length > 0;
+
+			var meshCollider = Selection.activeGameObject.GetComponentInParent<MeshCollider>();
+			return !!meshCollider;
 		}
 
 		[MenuItem(menuItemName, validate = false, priority = menuItemPriority)]
@@ -35,7 +37,10 @@ namespace Reification {
 			Undo.IncrementCurrentGroup();
 			Undo.SetCurrentGroupName("MeshGetTopSide");
 
-			foreach(var gameObject in Selection.gameObjects) ApplyTo(gameObject);
+			// LODGroup uses a single collider on parent LODGroup GameObject
+			var meshCollider = Selection.activeGameObject.GetComponentInParent<MeshCollider>();
+			var topSide = ApplyTo(meshCollider.gameObject);
+			Selection.activeGameObject = topSide;
 		}
 
 		// TODO: Make this an adjustable parameter
@@ -165,8 +170,6 @@ namespace Reification {
 			}
 
 			if(!hasMeshCollider) EP.Destroy(meshCollider);
-
-			Selection.activeGameObject = topSide;
 			return topSide;
 		}
 	}

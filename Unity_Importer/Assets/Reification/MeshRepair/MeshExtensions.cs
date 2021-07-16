@@ -456,13 +456,13 @@ namespace Reification {
 					if(keepHit && raycastValidate != null) keepHit = raycastValidate(origin, direction, maxDistance, hitList, hitPick);
 					if(!keepHit) {
 						// Drop the cast vertex
-						Debug.DrawLine(origin, origin - offset, Color.red, 10f);
+						//Debug.DrawLine(origin, origin - offset, Color.red, 10f);
 						castToKeep[x * countY + y] = -1;
 						continue;
 					}
 
 					// Keep the cast vertex
-					Debug.DrawLine(origin, meshHit.point, Color.green, 10f);
+					//Debug.DrawLine(origin, meshHit.point, Color.green, 10f);
 					castToKeep[x * countY + y] = keepPoints.Count;
 					keepPoints.Add(worldToLocal.MultiplyPoint3x4(meshHit.point));
 					keepCoords.Add(meshHit.textureCoord);
