@@ -351,7 +351,13 @@ namespace Reification {
 			return sideMesh;
 		}
 
-		public delegate bool RaycastValidate(List<RaycastHit> hitList, int hitIndex);
+		/// <summary>
+		/// Retain or discard a raycast
+		/// </summary>
+		/// <param name="hitList">all hits along the raycast, sorted by distance</param>
+		/// <param name="hitIndex">selected hit index</param>
+		/// <returns>true when hit should be retained</returns>
+		public delegate bool RaycastValidate(Vector3 origin, Vector3 direction, float maxDistance, List<RaycastHit> hitList, int hitPick);
 
 		/// <summary>
 		/// Create a mesh by resampling with a regular spacing using physics raycasting in scene
@@ -410,7 +416,8 @@ namespace Reification {
 			var countX = Mathf.FloorToInt(basisBox.x);
 			var countY = Mathf.FloorToInt(basisBox.y);
 			var offset = (basisBox.z + 2f) * castZ;
-			var origin = worldMid - (stepX * countX + stepY * countY + offset) / 2f;
+			var corner = worldMid - (stepX * countX + stepY * countY + offset) / 2f;
+			var direction = -offset;
 			var maxDistance = offset.magnitude;
 
 			var resample = new Mesh();
@@ -426,7 +433,8 @@ namespace Reification {
 			for(var x = 0; x < countX; ++x) {
 				for(var y = 0; y < countY; ++y) {
 					// Raycast to nearest hit on meshCollider
-					var hitList = new List<RaycastHit>(Physics.RaycastAll(origin + stepX * x + stepY * y + offset, -offset, maxDistance));
+					var origin = corner + stepX * x + stepY * y + offset;
+					var hitList = new List<RaycastHit>(Physics.RaycastAll(origin, -offset, maxDistance));
 					hitList.Sort(
 						(less, more) =>
 						less.distance < more.distance ? -1:
@@ -434,27 +442,27 @@ namespace Reification {
 						0
 					);
 					var meshHit = new RaycastHit();
-					var hitIndex = -1;
+					var hitPick = -1;
 					for(int index = 0; index < hitList.Count; ++index) {
 						var hitInfo = hitList[index];
 						if(hitInfo.collider != meshCollider) continue;
-						if(hitIndex >= 0 && hitInfo.distance > meshHit.distance) continue;
+						if(hitPick >= 0 && hitInfo.distance > meshHit.distance) continue;
 						meshHit = hitInfo;
-						hitIndex = index;
+						hitPick = index;
 					}
 
 					// Validate raycast hit
-					bool keepHit = hitIndex >= 0;
-					if(keepHit && raycastValidate != null) keepHit = raycastValidate(hitList, hitIndex);
+					bool keepHit = hitPick >= 0;
+					if(keepHit && raycastValidate != null) keepHit = raycastValidate(origin, direction, maxDistance, hitList, hitPick);
 					if(!keepHit) {
 						// Drop the cast vertex
-						//Debug.DrawLine(origin + stepX * x + stepY * y + offset, origin + stepX * x + stepY * y, Color.red, 10f);
+						Debug.DrawLine(origin, origin - offset, Color.red, 10f);
 						castToKeep[x * countY + y] = -1;
 						continue;
 					}
 
 					// Keep the cast vertex
-					//Debug.DrawLine(origin + stepX * x + stepY * y + offset, hitInfo.point, Color.green, 10f);
+					Debug.DrawLine(origin, meshHit.point, Color.green, 10f);
 					castToKeep[x * countY + y] = keepPoints.Count;
 					keepPoints.Add(worldToLocal.MultiplyPoint3x4(meshHit.point));
 					keepCoords.Add(meshHit.textureCoord);
@@ -485,6 +493,10 @@ namespace Reification {
 					}
 				}
 			}
+
+			// IDEA: Concave V segments of the boundary could be tested for closure using an elongated equal area triangle
+			// IDEA: Even straight segments might be extended in this way.
+			// NOTE: longer concave segments and straight segments could have ambiguous closure.
 
 			resample.vertices = keepPoints.ToArray();
 			resample.triangles = castFaces.ToArray();

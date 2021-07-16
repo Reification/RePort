@@ -1,6 +1,7 @@
 ﻿// Copyright 2021 Reification Incorporated
 // Licensed under Apache 2.0. All Rights reserved.
 
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -40,6 +41,80 @@ namespace Reification {
 		// TODO: Make this an adjustable parameter
 		public static float sampleSize = 2f; // (meters) length of equilateral triangle side
 
+		enum HitSide: byte {
+			front = 0,
+			back = 1
+		}
+
+		// TODO: This is really part of a raycast utility set
+		struct RaycastHitSide {
+			public RaycastHit hit;
+			public HitSide side;
+		}
+
+		public static float grassHeight = 1.5f;
+
+		static bool UncoveredMesh(Vector3 origin, Vector3 direction, float maxDistance, List<RaycastHit> hitList, int hitPick) {
+			// Check for covering object within grass height
+			// IMPORTANT: Single-sided-surfaces (e.g. water) will be considered to have infinite depth.
+
+			// Raycast back to get exit hits
+			// Combine enter and exit hits into a list sorted by distance
+			// Iterate through list counting enter and exit hits by object
+			// No object count can go below 0 (that implies starting in the object)
+			// If no objects are above 0 the hit is not inside an object.
+			// NOTE: Each hit represents a transition, so the query is for the interval before
+			// the chosen hit, which requires counting front side hits until the identified hit is reached.
+			// NOTE: Hits could include some additional selection (such as static objects only)
+
+			var meshHit = hitList[hitPick];
+
+			// Build the combined hit list using distance from front origin
+			var backHitList = new List<RaycastHit>(Physics.RaycastAll(meshHit.point, -direction, meshHit.distance));
+			var hitSideList = new List<RaycastHitSide>();
+			foreach(var hit in hitList) {
+				var sideHit = new RaycastHitSide { hit = hit, side = HitSide.front };
+				hitSideList.Add(sideHit);
+			}
+			foreach(var hit in backHitList) {
+				var sideHit = new RaycastHitSide { hit = hit, side = HitSide.back };
+				sideHit.hit.distance = meshHit.distance - sideHit.hit.distance;
+				hitSideList.Add(sideHit);
+			}
+			hitSideList.Sort(
+				(less, more) =>
+				less.hit.distance < more.hit.distance ? -1 :
+				less.hit.distance > more.hit.distance ? 1 :
+				0
+			);
+
+			// Count object hits from origin to hitPick
+			// Single-sided objects will be assumed to project in the ray direction
+			var hitIndex = 0;
+			var solidCount = new Dictionary<Collider, int>();
+			for(; hitIndex < hitSideList.Count; ++hitIndex) {
+				var hit = hitSideList[hitIndex];
+				var collider = hit.hit.collider;
+				// ASSUME: hitPick is the first hit on collider
+				if(collider == meshHit.collider) break;
+				if(!solidCount.ContainsKey(collider)) solidCount.Add(collider, 0);
+				solidCount[collider] += hit.side == HitSide.front ? 1 : -1;
+				// If count < 0 then raycast begain inside of an object, which is ignored
+				if(solidCount[collider] < 0) solidCount[collider] = 0;
+			}
+
+			// If solidCount has any entries > 0 then hit is inside of an object
+			foreach(var solid in solidCount) {
+				if(solid.Value > 0) return false;
+			}
+
+			// Even if hit is not inside an object, grass must not poke through objects
+			// so verify that the grass height contains no objects
+			if(hitIndex > 0 && (meshHit.distance - hitSideList[hitIndex - 1].hit.distance) < grassHeight) return false;
+
+			return true;
+		}
+
 		public static GameObject ApplyTo(GameObject gameObject) {
 			var meshCollider = gameObject.GetComponent<MeshCollider>();
 			var hasMeshCollider = !!meshCollider;
@@ -59,7 +134,7 @@ namespace Reification {
 			*/
 			var stepX = Vector3.right * sampleSize;
 			var stepY = Quaternion.Euler(0f, -60f, 0f) * stepX;
-			var topMesh = meshCollider.GetResample(stepX, stepY, Vector3.up);
+			var topMesh = meshCollider.GetResample(stepX, stepY, Vector3.up, UncoveredMesh);
 			topMesh.name = meshCollider.sharedMesh.name + " top";
 
 			// Save mesh asset
