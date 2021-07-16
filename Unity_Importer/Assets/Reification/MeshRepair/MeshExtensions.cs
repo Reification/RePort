@@ -351,6 +351,8 @@ namespace Reification {
 			return sideMesh;
 		}
 
+		public delegate bool RaycastValidate(List<RaycastHit> hitList, int hitIndex);
+
 		/// <summary>
 		/// Create a mesh by resampling with a regular spacing using physics raycasting in scene
 		/// </summary>
@@ -371,9 +373,9 @@ namespace Reification {
 		/// <param name="queryTriggerInteraction">Raycast queryTriggerInteraction argument</param>
 		/// <returns></returns>
 		public static Mesh GetResample(
-			this MeshCollider meshCollider, Vector3 stepX, Vector3 stepY, Vector3 castZ,
+			this MeshCollider meshCollider, Vector3 stepX, Vector3 stepY, Vector3 castZ, RaycastValidate raycastValidate = null,
 			int layerMask = Physics.DefaultRaycastLayers, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.UseGlobal
-		) {
+			) {
 			var sharedMesh = meshCollider.sharedMesh;
 			if(!sharedMesh) return null;
 
@@ -423,21 +425,39 @@ namespace Reification {
 			var keepCoords = new List<Vector2>();
 			for(var x = 0; x < countX; ++x) {
 				for(var y = 0; y < countY; ++y) {
-					// Raycast
-					if(
-						!Physics.Raycast(origin + stepX * x + stepY * y + offset, -offset, out var hitInfo, maxDistance, layerMask, queryTriggerInteraction) ||
-						hitInfo.collider != meshCollider
-					) {
+					// Raycast to nearest hit on meshCollider
+					var hitList = new List<RaycastHit>(Physics.RaycastAll(origin + stepX * x + stepY * y + offset, -offset, maxDistance));
+					hitList.Sort(
+						(less, more) =>
+						less.distance < more.distance ? -1:
+						less.distance > more.distance ? 1:
+						0
+					);
+					var meshHit = new RaycastHit();
+					var hitIndex = -1;
+					for(int index = 0; index < hitList.Count; ++index) {
+						var hitInfo = hitList[index];
+						if(hitInfo.collider != meshCollider) continue;
+						if(hitIndex >= 0 && hitInfo.distance > meshHit.distance) continue;
+						meshHit = hitInfo;
+						hitIndex = index;
+					}
+
+					// Validate raycast hit
+					bool keepHit = hitIndex >= 0;
+					if(keepHit && raycastValidate != null) keepHit = raycastValidate(hitList, hitIndex);
+					if(!keepHit) {
 						// Drop the cast vertex
 						//Debug.DrawLine(origin + stepX * x + stepY * y + offset, origin + stepX * x + stepY * y, Color.red, 10f);
 						castToKeep[x * countY + y] = -1;
 						continue;
-					};
+					}
+
 					// Keep the cast vertex
 					//Debug.DrawLine(origin + stepX * x + stepY * y + offset, hitInfo.point, Color.green, 10f);
 					castToKeep[x * countY + y] = keepPoints.Count;
-					keepPoints.Add(worldToLocal.MultiplyPoint3x4(hitInfo.point));
-					keepCoords.Add(hitInfo.textureCoord);
+					keepPoints.Add(worldToLocal.MultiplyPoint3x4(meshHit.point));
+					keepCoords.Add(meshHit.textureCoord);
 				}
 			}
 
