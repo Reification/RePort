@@ -25,7 +25,7 @@ namespace Reification {
 		[MenuItem(gameObjectMenuName, validate = false, priority = gameObjectMenuPriority)]
 		private static void Execute() {
 			if(!EP.useEditorAction) {
-				Debug.Log("MeshBackside cannot be applied during play");
+				Debug.Log("MeshGetTopSide cannot be applied during play");
 				return;
 			}
 
@@ -62,8 +62,6 @@ namespace Reification {
 			var topMesh = meshCollider.GetResample(stepX, stepY, Vector3.up);
 			topMesh.name = meshCollider.sharedMesh.name + " top";
 
-			if(!hasMeshCollider) EP.Destroy(meshCollider);
-
 			// Save mesh asset
 			var topMeshPath = AssetDatabase.GetAssetPath(meshCollider.sharedMesh);
 			if(topMeshPath == null || !topMeshPath.StartsWith("Assets/")) topMeshPath = EditorSceneManager.GetActiveScene().path;
@@ -90,6 +88,8 @@ namespace Reification {
 				meshRenderer = topSide.AddComponent<MeshRenderer>();
 				meshRenderer.sharedMaterials = materials;
 			}
+
+			if(!hasMeshCollider) EP.Destroy(meshCollider);
 
 			Selection.activeGameObject = topSide;
 			return topSide;
