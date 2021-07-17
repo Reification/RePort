@@ -37,14 +37,31 @@ namespace Reification {
 			Undo.IncrementCurrentGroup();
 			Undo.SetCurrentGroupName("MeshGetTopSide");
 
-			// LODGroup uses a single collider on parent LODGroup GameObject
-			var meshCollider = Selection.activeGameObject.GetComponentInParent<MeshCollider>();
-			var topSide = ApplyTo(meshCollider.gameObject);
-			Selection.activeGameObject = topSide;
+			// NOTE: If there is an LODGroup parent it will have a collider for the lowest level of detail,
+			// which will shadow rays cast to the selected level of detail.
+			var disabledColliders = new List<Collider>();
+			var parentColliders = Selection.activeGameObject.GetComponentsInParent<Collider>();
+			foreach(var collider in parentColliders) {
+				if(collider.gameObject == Selection.activeGameObject) continue;
+				if(!collider.enabled) continue;
+				collider.enabled = false;
+				disabledColliders.Add(collider);
+			}
+			Collider enabledCollider = Selection.activeGameObject.GetComponent<Collider>();
+			if(enabledCollider) {
+				if(!enabledCollider.enabled) enabledCollider.enabled = true;
+				else enabledCollider = null;
+			}
+
+			// NOTE: LODGroup will use the lowest detail collider, but sampling requires the highest
+			Selection.activeGameObject = ApplyTo(Selection.activeGameObject);
+
+			if(enabledCollider) enabledCollider.enabled = false;
+			foreach(var collider in disabledColliders) collider.enabled = true;
 		}
 
 		// TODO: Make this an adjustable parameter
-		public static float sampleSize = 2f; // (meters) length of equilateral triangle side
+		public static float sampleSize = 0.5f; // (meters) length of equilateral triangle side
 
 		enum HitSide: byte {
 			front = 0,
@@ -57,7 +74,7 @@ namespace Reification {
 			public HitSide side;
 		}
 
-		public static float grassHeight = 1.5f;
+		public static float grassHeight = 0.5f;
 
 		static bool UncoveredMesh(Vector3 origin, Vector3 direction, float maxDistance, List<RaycastHit> hitList, int hitPick) {
 			// Check for covering object within grass height
