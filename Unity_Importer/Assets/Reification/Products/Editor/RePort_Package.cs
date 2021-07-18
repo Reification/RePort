@@ -47,13 +47,15 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Prefabs/Sun.prefab",
 			"Assets/Reification/AutoImport/Settings/PostProcessing.asset",
 
-			"Assets/Reification/MeshRepair/Editor/MeshInvert.cs",
-			"Assets/Reification/MeshRepair/Editor/MeshBackside.cs",
-			"Assets/Reification/MeshRepair/Editor/MeshMaterialize.cs",
+			// Mesh Repair
 			"Assets/Reification/MeshRepair/MeshExtensions.cs",
+			"Assets/Reification/MeshRepair/Editor/MeshMaterialize.cs",
+			"Assets/Reification/MeshRepair/Editor/MeshInvert.cs",
+			"Assets/Reification/MeshRepair/Editor/MeshAddBackSide.cs",
+			"Assets/Reification/MeshRepair/Editor/MeshGetTopSide.cs",
 
+			// General
 			"Assets/Reification/EditorPlayer/EditorPlayer.cs",
-
 			"Assets/Reification/Extensions/TransformExtensions.cs",
 			"Assets/Reification/Extensions/PathName/PathName.cs",
 			"Assets/Reification/Extensions/PathName/PathNameExtensions.cs",

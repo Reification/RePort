@@ -23,9 +23,9 @@ namespace Reification {
   /// </remarks>
   public class MeshMaterialize {
     const string menuItemName = "Reification/Materialize %&m";
-    const int menuItemPriority = 42;
+    const int menuItemPriority = 40;
     const string gameObjectMenuName = "GameObject/Reification/Materialize";
-    const int gameObjectMenuPriority = 22;
+    const int gameObjectMenuPriority = 20;
 
     [MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
     [MenuItem(gameObjectMenuName, validate = true, priority = gameObjectMenuPriority)]
