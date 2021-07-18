@@ -19,6 +19,7 @@ namespace Reification {
 		[MenuItem(gameObjectMenuName, validate = true, priority = gameObjectMenuPriority)]
 		private static bool Validate() {
 			if(!EP.useEditorAction) return false;
+			if(!Selection.activeGameObject) return false;
 
 			var meshCollider = Selection.activeGameObject.GetComponentInParent<MeshCollider>();
 			return !!meshCollider;
