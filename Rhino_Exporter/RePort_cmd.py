@@ -272,7 +272,6 @@ def ExportModel(path, name, detail=0):
         True
     )
     if not success:
-        print("Model export failed for " + file_name)
         raise Exception("Model export failed for " + file_name)
 
 # NOTE: file_name followed by space will exit save options
@@ -290,7 +289,6 @@ def ExportBlock(path, name, detail=0):
         True
     )
     if not success:
-        print("Block export failed for " + file_name)
         raise Exception("Block export failed for " + file_name)
 
 # TODO: Find Documentation for custom units python interface
@@ -496,7 +494,13 @@ def LightLocation(light, scale):
 # Pause exporting to show additions and selection
 def ShowStep(step_name):
     rs.EnableRedraw(True)
-    input = rs.GetString("Showing step: " + step_name + " (Press Enter to continue)")
+    input = ""
+    while True:
+        input = rs.GetString("Showing step: " + step_name + " ([C]ontinue or [A]bort?)")
+        if input.StartsWith("C"):
+            break
+        if input.StartsWith("A"):
+            raise Exception("Aborted at step: " + step_name)
     rs.EnableRedraw(False)
 
 # Export currently selected objects
