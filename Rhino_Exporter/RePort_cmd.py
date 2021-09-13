@@ -645,14 +645,24 @@ def RunCommand(is_interactive):
     
     name_map = {}
     selected = rs.SelectedObjects(True, True)
-    try:
+    try:    
         rs.EnableRedraw(False)
+        
+        # Check for bad objects
+        rs.Command("SelBadObjects")
+        bad_objects = SelectedObjects()
+        if len(bad_objects) > 0:
+            print("WARNING: SelBadObjects found " + str(len(bad_objects)) + " bad objects -> export may be have problems")
+            ShowStep("SelBadObjects")
         
         # Select all exportable objects in scene
         SelectExport()
         UniqueRename(name_map)
         scale = ModelScale()
         ExportSelected(scale, *path_name)
+    except Exception as exception:
+        print(exception)
+        pass
     finally:
         # Revert object names and selection
         SelectExport()
@@ -669,4 +679,4 @@ def RunCommand(is_interactive):
 # GOAL: No changes to scene (no save request)
 # GOAL: Launch Rhino in batch mode (headless) 
 # with script, input & output paths as arguments
-if __name__ == "__main__": RunCommand(False)
+if __name__ == "__main__": RunCommand(True)
