@@ -91,8 +91,6 @@ def SafeObjectName(name):
     name = name.replace("=", "-")
     return name
 
-# QUESTION: Is it possible to also render block names safe?
-
 # PROBLEM: Objects may have empty, non-unique opr unsafe names
 # SOLUTION: Give each object a unique safe name, and create
 # a dictionary to revert these changes after export.
@@ -264,7 +262,7 @@ def MeshingOptions(detail):
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
 def ExportModel(path, name, detail=0):
     file_name = os.path.join(path, name + SaveSuffix())
-    return rs.Command(
+    success = rs.Command(
         "-Export " +\
         SaveOptions() +\
         '"' + file_name + '" ' +\
@@ -273,12 +271,15 @@ def ExportModel(path, name, detail=0):
         "Enter", 
         True
     )
+    if not success:
+        print("Model export failed for " + file_name)
+        raise Exception("Model export failed for " + file_name)
 
 # NOTE: file_name followed by space will exit save options
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
 def ExportBlock(path, name, detail=0):
     file_name = os.path.join(path, name + save_sufix())
-    return rs.Command(
+    success = rs.Command(
         "-BlockManager Export " +\
         '"' + name + '" ' +\
         SaveOptions() +\
@@ -288,6 +289,9 @@ def ExportBlock(path, name, detail=0):
         "Enter Enter",  # NOTE: Second enter exits BlockManager
         True
     )
+    if not success:
+        print("Block export failed for " + file_name)
+        raise Exception("Block export failed for " + file_name)
 
 # TODO: Find Documentation for custom units python interface
 # https://developer.rhino3d.com/api/rhinoscript/document_methods/unitcustomunitsystem.htm
