@@ -604,6 +604,15 @@ def ExportSelected(scale, path, name):
     rs.SelectObjects(selected)
     return export_exists
 
+# Show bad objects and wait for user response
+# https://wiki.mcneel.com/rhino/badobjects
+def ShowBadObjects(is_interactive):
+    rs.Command("SelBadObjects")
+    bad_objects = SelectedObjects()
+    if len(bad_objects) > 0:
+        print("WARNING: SelBadObjects found " + str(len(bad_objects)) + " bad objects -> export may be have problems")
+        if is_interactive: ShowStep("SelBadObjects")
+
 # Default: create a folder next to active doc with the same name
 def GetExportPath(is_interactive):
     if sc.doc.ActiveDoc.Path is None or sc.doc.ActiveDoc.Name is None:
@@ -652,12 +661,8 @@ def RunCommand(is_interactive):
     try:    
         rs.EnableRedraw(False)
         
-        # Check for bad objects
-        rs.Command("SelBadObjects")
-        bad_objects = SelectedObjects()
-        if len(bad_objects) > 0:
-            print("WARNING: SelBadObjects found " + str(len(bad_objects)) + " bad objects -> export may be have problems")
-            ShowStep("SelBadObjects")
+        # Check before committing to export
+        ShowBadObjects(is_interactive)
         
         # Select all exportable objects in scene
         SelectExport()
