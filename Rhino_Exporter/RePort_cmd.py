@@ -91,8 +91,6 @@ def SafeObjectName(name):
     name = name.replace("=", "-")
     return name
 
-# QUESTION: Is it possible to also render block names safe?
-
 # PROBLEM: Objects may have empty, non-unique opr unsafe names
 # SOLUTION: Give each object a unique safe name, and create
 # a dictionary to revert these changes after export.
@@ -264,7 +262,7 @@ def MeshingOptions(detail):
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
 def ExportModel(path, name, detail=0):
     file_name = os.path.join(path, name + SaveSuffix())
-    return rs.Command(
+    success = rs.Command(
         "-Export " +\
         SaveOptions() +\
         '"' + file_name + '" ' +\
@@ -273,12 +271,14 @@ def ExportModel(path, name, detail=0):
         "Enter", 
         True
     )
+    if not success:
+        raise Exception("Model export failed for " + file_name)
 
 # NOTE: file_name followed by space will exit save options
 # IMPORTANT: enclosing file_name in " prevents truncation at spaces
 def ExportBlock(path, name, detail=0):
     file_name = os.path.join(path, name + save_sufix())
-    return rs.Command(
+    success = rs.Command(
         "-BlockManager Export " +\
         '"' + name + '" ' +\
         SaveOptions() +\
@@ -288,6 +288,8 @@ def ExportBlock(path, name, detail=0):
         "Enter Enter",  # NOTE: Second enter exits BlockManager
         True
     )
+    if not success:
+        raise Exception("Block export failed for " + file_name)
 
 # TODO: Find Documentation for custom units python interface
 # https://developer.rhino3d.com/api/rhinoscript/document_methods/unitcustomunitsystem.htm
@@ -492,7 +494,13 @@ def LightLocation(light, scale):
 # Pause exporting to show additions and selection
 def ShowStep(step_name):
     rs.EnableRedraw(True)
-    input = rs.GetString("Showing step: " + step_name + " (Press Enter to continue)")
+    input = ""
+    while True:
+        input = rs.GetString("Showing step: " + step_name + " ([C]ontinue or [A]bort?)")
+        if input.StartsWith("C"):
+            break
+        if input.StartsWith("A"):
+            raise Exception("Aborted at step: " + step_name)
     rs.EnableRedraw(False)
 
 # Export currently selected objects
@@ -596,6 +604,15 @@ def ExportSelected(scale, path, name):
     rs.SelectObjects(selected)
     return export_exists
 
+# Show bad objects and wait for user response
+# https://wiki.mcneel.com/rhino/badobjects
+def ShowBadObjects(is_interactive):
+    rs.Command("SelBadObjects")
+    bad_objects = SelectedObjects()
+    if len(bad_objects) > 0:
+        print("WARNING: SelBadObjects found " + str(len(bad_objects)) + " bad objects -> export may be have problems")
+        if is_interactive: ShowStep("SelBadObjects")
+
 # Default: create a folder next to active doc with the same name
 def GetExportPath(is_interactive):
     if sc.doc.ActiveDoc.Path is None or sc.doc.ActiveDoc.Name is None:
@@ -641,14 +658,20 @@ def RunCommand(is_interactive):
     
     name_map = {}
     selected = rs.SelectedObjects(True, True)
-    try:
+    try:    
         rs.EnableRedraw(False)
+        
+        # Check before committing to export
+        ShowBadObjects(is_interactive)
         
         # Select all exportable objects in scene
         SelectExport()
         UniqueRename(name_map)
         scale = ModelScale()
         ExportSelected(scale, *path_name)
+    except Exception as exception:
+        print(exception)
+        pass
     finally:
         # Revert object names and selection
         SelectExport()
@@ -665,4 +688,4 @@ def RunCommand(is_interactive):
 # GOAL: No changes to scene (no save request)
 # GOAL: Launch Rhino in batch mode (headless) 
 # with script, input & output paths as arguments
-if __name__ == "__main__": RunCommand(False)
+if __name__ == "__main__": RunCommand(True)
