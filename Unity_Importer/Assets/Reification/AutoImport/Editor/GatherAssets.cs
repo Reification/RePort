@@ -187,14 +187,17 @@ namespace Reification {
 				for(var m = 0; m < sharedMaterials.Length; ++m) {
 					var oldMaterial = sharedMaterials[m];
 					if(!oldMaterial) continue;
-					if(!materialAssets.ContainsKey(oldMaterial.name)) {
-						Debug.LogWarning($"Missing Material {oldMaterial.name} on {renderer.Path()} from {materialPath}");
-						continue;
-					}
-					var newMaterial = materialAssets[oldMaterial.name];
-					if(!newMaterial) {
-						Debug.LogWarning($"Created material {oldMaterial.name} on {renderer.Path()} could not be loaded from {materialPath} -> stop editing assets, then reconstruct MaterialGatherer");
-						continue;
+					Material newMaterial = null;
+					if(materialAssets.ContainsKey(oldMaterial.name)) {
+						newMaterial = materialAssets[oldMaterial.name];
+					} else {
+						if(!AssetDatabase.GetAssetPath(oldMaterial).StartsWith("Assets/")) {
+							newMaterial = oldMaterial;
+						} else {
+							Debug.LogWarning($"Missing Material {oldMaterial.name} on {renderer.Path()} from {materialPath} -> creating default replacement");
+							newMaterial = EP.CopyAssetToPath(oldMaterial, materialPath.Substring("Assets/".Length), ".mat");
+							materialAssets.Add(newMaterial.name, newMaterial);
+						}
 					}
 					sharedMaterials[m] = newMaterial;
 				}
@@ -300,6 +303,7 @@ namespace Reification {
 					if(renderer) {
 						materialGatherer.CopyMaterials(renderer);
 						foreach(var material in renderer.sharedMaterials) {
+							if(!material) continue;
 							if(copyMaterials.Contains(material.name)) continue;
 							copyMaterials.Add(material.name);
 							textureGatherer.CopyTextures(material);
