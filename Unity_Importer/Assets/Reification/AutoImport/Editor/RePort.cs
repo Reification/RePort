@@ -235,7 +235,7 @@ namespace Reification {
 		/// </summary>
 		/// <remarks>
 		/// Lights are not imported by default since their units
-		/// may be physics instead of rendered.
+		/// may be physical intensity instead of rendered intensity.
 		/// </remarks>
 		public static void MeshesImporter(ModelImporter modelImporter) {
 			// Lightmaps will be generated as needed after mesh extraction
@@ -380,7 +380,7 @@ namespace Reification {
 		}
 
 		static void ProcessExtractionImport() {
-			// Ensure that ProcessTexturesImport is called only once per import batch
+			// Ensure that ProcessExtractionImport is called only once per import batch
 			// IMPORTANT: Unregistering must occur before any possible import exception
 			// Otherwise the editor will deadlock while repeatedly attempting to import.
 			EditorApplication.update -= ProcessExtractionImport;
@@ -391,12 +391,19 @@ namespace Reification {
 			// IMPORTANT: Textures must be extracted and remapped before materials are extracted
 			// This will require reimporting the model, with texture remapping applied
 			try {
+				var count = 0;
 				foreach(var modelPath in extractionImport) {
+					Debug.Log($"RePort.ProcessExtractionImport(): asset = {modelPath}");
+					if(EditorUtility.DisplayCancelableProgressBar("Extract Constituent Model Textures", modelPath, count / (float)extractionImport.Count)) break;
+					count += 1;
+
 					ExtractTextures(modelPath);
 					// IMPORTANT: Always reimport model in order to update configuration.
 					AssetDatabase.ImportAsset(modelPath, ImportAssetOptions.ForceSynchronousImport); // Delegates to updating methods immediately
 				}
 			} finally {
+				EditorUtility.ClearProgressBar();
+
 				// IMPORTANT: Unblock future imports even if this import failed
 				extractionImport.Clear();
 			}
@@ -465,8 +472,6 @@ namespace Reification {
 			// SOLUTION: Abort immediately if importAssets is empty
 			if(configuredImport.Count == 0) return;
 
-			// TODO: Progress bar popup
-
 			// There are 3 import types to consider:
 			// Partial models, which are in a subfolder of importPath and have a suffix
 			// Complete models, which are in a subfolder of importPath and have no suffix
@@ -476,16 +481,20 @@ namespace Reification {
 			var assembledModels = new List<GameObject>();
 			var success = true;
 			try {
+				var count = 0;
 				foreach(var assetPath in configuredImport) {
-					//Debug.Log($"RePort.ProcessImportedModels(): modelPath = {assetPath}");
+					Debug.Log($"RePort.ProcessConfiguredImport(): asset = {assetPath}");
+					if(EditorUtility.DisplayCancelableProgressBar("Extract Constituent Model Assets", assetPath, count / (float)configuredImport.Count)) break;
+					count += 1;
 
 					// Extract all assets from each imported model and create a prefab
 					var model = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
 					var modelPathRoot = assetPath.Substring(0, assetPath.LastIndexOf('.'));
 					GatherAssets.ApplyTo(model, modelPathRoot);
 					var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(modelPathRoot + ".prefab");
+
 					// Remove the original model file
-					// NOTE: If the original FBX asset remains in the project it will trigger the reimport process
+					// IMPORTANT: If the original FBX asset remains in the project it will trigger the reimport process
 					// whenever the project is cloned.
 					AssetDatabase.MoveAssetToTrash(assetPath);
 
@@ -507,14 +516,16 @@ namespace Reification {
 				Debug.LogError($"ProcessImportedModels failed with error:\n{e.Message}");
 				success = false;
 			} finally {
+				EditorUtility.ClearProgressBar();
+
 				// IMPORTANT: Unblock future imports even if this import failed
 				configuredImport.Clear();
 			}
 			if(!success) return;
 
-			CombinePartial(partialModels, completeModels);
-			AssembleComplete(completeModels, assembledModels);
-			var configured = ConfigureAssembled(assembledModels);
+			CombinePartialModels(partialModels, completeModels);
+			ConfigureCombinedModels(completeModels, assembledModels);
+			var configured = BuildModelScenes(assembledModels);
 
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
@@ -524,19 +535,29 @@ namespace Reification {
 		}
 
 		// Combines partial models (meshes and levels of detail and prefab places) into complete models
-		static void CombinePartial(Dictionary<string, List<GameObject>> partialModels, List<GameObject> completeModels) {
-			// Find or make a merged prefab for each folder in the path
-			// IMPORTANT: This must be done BEFORE ReplacePrefabs.ApplyTo()
-			// so that prefabs can be linked immediately and updated subsequently.
-			// NOTE: Existing merged prefabs will be updated by new imports
+		static void CombinePartialModels(Dictionary<string, List<GameObject>> partialModels, List<GameObject> completeModels) {
 			var mergedPrefabs = new Dictionary<string, GameObject>();
-			foreach(var path in partialModels.Keys) {
-				// IMPORTANT: this will not create an importPath named RePort,
-				// since importPath ends with '/' which is not included in path.
-				if(!path.StartsWith(importPath)) continue;
-				CreateMerged(path, mergedPrefabs);
+			try {
+				// Find or make a merged prefab for each folder in the path
+				// IMPORTANT: This must be done BEFORE ReplacePrefabs.ApplyTo()
+				// so that prefabs can be linked immediately and updated subsequently.
+				// NOTE: Existing merged prefabs will be updated by new imports
+				var count = 0;
+				foreach(var path in partialModels.Keys) {
+					Debug.Log($"RePort.CombinePartialModels(): merge asset = {path}");
+					if(EditorUtility.DisplayCancelableProgressBar("Combine Partial Models", path, count / (float)partialModels.Count)) break;
+					count += 1;
+
+					// IMPORTANT: this will not create an importPath named RePort,
+					// since importPath ends with '/' which is not included in path.
+					if(!path.StartsWith(importPath)) continue;
+					CreateMerged(path, mergedPrefabs);
+				}
+			} finally {
+				EditorUtility.ClearProgressBar();
+
+				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 			}
-			AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 
 			try {
 				AssetDatabase.StartAssetEditing();
@@ -544,7 +565,12 @@ namespace Reification {
 				// NOTE: If new constituents are added or updated they will be merged into existing model.
 				// NOTE: If additional prefabs are added they will replace placeholders
 				// in the merged model, which will persist through the merge and configure process.
+				var count = 0;
 				foreach(var item in mergedPrefabs) {
+					Debug.Log($"RePort.CombinePartial(): gather asset = {item.Key}");
+					if(EditorUtility.DisplayCancelableProgressBar("Gather Combined Model Assets", item.Key, count / (float)mergedPrefabs.Count)) break;
+					count += 1;
+
 					if(partialModels.ContainsKey(item.Key)) MergeModels.ApplyTo(item.Value, partialModels[item.Key].ToArray());
 					// Assets will be gathered in folder adjacent to merged model
 					// IMPORTANT: Constituent prefabs will maintain independent asset copies.
@@ -554,6 +580,8 @@ namespace Reification {
 					//Debug.Log($"Gathered assets from {item.Value.name} to {item.Key}");
 				}
 			} finally {
+				EditorUtility.ClearProgressBar();
+
 				AssetDatabase.StopAssetEditing();
 				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 			}
@@ -578,10 +606,15 @@ namespace Reification {
 		}
 
 		// Swap assets, replace prefabs, gather levels of detail, add colliders
-		static void AssembleComplete(List<GameObject> completeModels, List<GameObject> assembledModels) {
+		static void ConfigureCombinedModels(List<GameObject> completeModels, List<GameObject> assembledModels) {
 			try {
 				AssetDatabase.StartAssetEditing();
+				var count = 0;
 				foreach(var model in completeModels) {
+					Debug.Log($"RePort.ConfigureCombinedModels(): configure asset = {AssetDatabase.GetAssetPath(model)}");
+					if(EditorUtility.DisplayCancelableProgressBar("Configure Combined Models", AssetDatabase.GetAssetPath(model), count / (float)completeModels.Count)) break;
+					count += 1;
+
 					// IMPORTANT: All assets used by models are gathered inside an adjacent folders with the same name
 					var searchPath = AssetDatabase.GetAssetPath(model);
 					searchPath = searchPath.Substring(0, searchPath.Length - ".prefab".Length);
@@ -598,39 +631,61 @@ namespace Reification {
 					//Debug.Log($"Configured prefab: {prefabPath}");
 				}
 			} finally {
+				EditorUtility.ClearProgressBar();
+
 				AssetDatabase.StopAssetEditing();
 				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 			}
 
-			// IMPORTANT: ReplacePrefabs needs to create placeholders, which cannot occur during AssetDatabase editing
-			foreach(var model in completeModels) {
-				// IMPORTANT: Assembled models will contain only prefabs inside an adjacent folder with the same name
-				// NOTE: Constituent models may contain other constituent models, so search should begin adjacent
-				var prefabPath = AssetDatabase.GetAssetPath(model);
-				prefabPath = prefabPath.Substring(0, prefabPath.Length - ".prefab".Length);
-				var isAssembledModel = !prefabPath.Substring(importPath.Length).Contains("/");
-				if(!isAssembledModel) prefabPath = prefabPath.Substring(0, prefabPath.LastIndexOf('/'));
-				ReplacePrefabs.ApplyTo(model, prefabPath);
+			try {
+				// IMPORTANT: ReplacePrefabs needs to create placeholders, which cannot occur during AssetDatabase editing
+				var count = 0;
+				foreach(var model in completeModels) {
+					Debug.Log($"RePort.ConfigureCombinedModels(): replace in asset = {AssetDatabase.GetAssetPath(model)}");
+					if(EditorUtility.DisplayCancelableProgressBar("Replace Prefab Placeholders", AssetDatabase.GetAssetPath(model), count / (float)completeModels.Count)) break;
+					count += 1;
 
-				// Only create scenes from prefabs in RePort
-				if(isAssembledModel) assembledModels.Add(model);
+					// IMPORTANT: Assembled models will contain only prefabs inside an adjacent folder with the same name
+					// NOTE: Constituent models may contain other constituent models, so search should begin adjacent
+					var prefabPath = AssetDatabase.GetAssetPath(model);
+					prefabPath = prefabPath.Substring(0, prefabPath.Length - ".prefab".Length);
+					var isAssembledModel = !prefabPath.Substring(importPath.Length).Contains("/");
+					if(!isAssembledModel) prefabPath = prefabPath.Substring(0, prefabPath.LastIndexOf('/'));
+					ReplacePrefabs.ApplyTo(model, prefabPath);
+
+					// Only create scenes from prefabs in RePort
+					if(isAssembledModel) assembledModels.Add(model);
+				}
+			} finally {
+				EditorUtility.ClearProgressBar();
+
+				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 			}
 		}
 
 		// Create scene for assembled model and generate lighting
-		static List<string> ConfigureAssembled(List<GameObject> assembledModels) {
-			var configuredScenes = new List<string>();
-			foreach(var model in assembledModels) {
-				var modelPath = AssetDatabase.GetAssetPath(model);
-				modelPath = modelPath.Substring(0, modelPath.Length - ".prefab".Length);
-				var scenePath = AutoScene.ApplyTo(modelPath, model);
-				// TODO: Hook to add configurable prefabs...
-				AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
-				// TODO: Hook to bake Reflections, Acoustics...
-				//Debug.Log($"Created scene : {scenePath}");
-				configuredScenes.Add(scenePath);
+		static List<string> BuildModelScenes(List<GameObject> assembledModels) {
+			var modelScenes = new List<string>();
+			try {
+				var count = 0;
+				foreach(var model in assembledModels) {
+					Debug.Log($"RePort.BuildModelScenes(): replace in asset = {AssetDatabase.GetAssetPath(model)}");
+					if(EditorUtility.DisplayCancelableProgressBar("Build Models Scenes", AssetDatabase.GetAssetPath(model), count / (float)assembledModels.Count)) break;
+					count += 1;
+
+					var modelPath = AssetDatabase.GetAssetPath(model);
+					modelPath = modelPath.Substring(0, modelPath.Length - ".prefab".Length);
+					var scenePath = AutoScene.ApplyTo(modelPath, model);
+					// TODO: Hook to add configurable prefabs... trees and other models
+					AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
+					// TODO: Hook to bake Reflections, Acoustics...
+					//Debug.Log($"Created scene : {scenePath}");
+					modelScenes.Add(scenePath);
+				}
+			} finally {
+				EditorUtility.ClearProgressBar();
 			}
-			return configuredScenes;
+			return modelScenes;
 		}
 	}
 }
