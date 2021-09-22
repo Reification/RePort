@@ -14,18 +14,36 @@ namespace Reification {
 		
 		[MenuItem("Reification/About", priority = int.MaxValue)]
 		static private void About() {
-			var about = $"RePort v{version}" +
+			var window = ScriptableObject.CreateInstance<RePortAbout>();
+
+			window.about = $"RePort v{version}" +
 			"\nCopyright 2021 Reification Incorporated. (https://reification.io)" +
 			"\nLicensed under Apache 2.0. All Rights reserved. (https://github.com/Reification/RePort)";
 
-			about += "\n\nImporters:";
-			about += "\n- FBX, single files (https://docs.unity3d.com/Manual/3D-formats.html)";
+			window.about += "\n\nImporters:";
+			window.about += "\n- FBX, single files (https://docs.unity3d.com/Manual/3D-formats.html)";
 			foreach(var importer in importerDict.Values) {
-				about += "\n- " + importer.About();
+				window.about += "\n- " + importer.About();
 			}
 
-			// TODO: Make this a pop-up window
-			Debug.Log(about);
+			window.position = new Rect(Screen.width / 2, Screen.height / 2, 250, 300);
+
+			window.ShowPopup();
+			Debug.Log(window.about);
+		}
+
+		class RePortAbout: EditorWindow {
+			public string about;
+
+			// TODO: Add a support email button
+			// with a templated message
+
+			// TODO: Resize window to fit text and enable scrolling
+
+			void OnGUI() {
+				if(GUILayout.Button("Close")) Close();
+				EditorGUILayout.LabelField(about, EditorStyles.wordWrappedLabel);
+			}
 		}
 
 		// This preprocessor pertains only to models in this path
