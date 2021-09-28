@@ -45,7 +45,7 @@ namespace Reification {
 		// QUESTION: Can a scene be saved from a script if not marked "dirty"? If so,
 		// then when running headless, marking dirty is unnecessary
 
-		// TEMP: Use this instead of !Application.isBatchMode for performace testing
+		// TEMP: Use this instead of !Application.isBatchMode for performance testing
 		public static bool useEditorUndo {
 			get {
 				return !Application.isBatchMode;
@@ -347,7 +347,7 @@ namespace Reification {
 		/// </summary>
 		/// <remarks>
 		/// Data will be created in the StreamingAssets folder, which is in Assets
-		/// while using the Editor, and in the package files while in the case of a build.
+		/// while using the Editor, and in the package files in the case of a build.
 		/// </remarks>
 		/// <param name="path">relative path using "/" directory separators</param>
 		/// <param name="create">when false count directories to be created, without creating them</param>
@@ -406,12 +406,15 @@ namespace Reification {
 					var next = last + "/" + folder;
 					var nextOS = lastOS + Path.DirectorySeparatorChar + folder;
 					if(!Directory.Exists(nextOS)) {
-						if(create) AssetDatabase.CreateFolder(last, folder);
+						// PROBLEM: If directory is not in AssetDatabase.CreateFolder() will not work
+						// SOLUTION: Use Directory.CreateDirectory
+						if(create) Directory.CreateDirectory(nextOS);
 						created += 1;
 					}
 					last = next;
 					lastOS = nextOS;
 				}
+				AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
 #endif
 			} else {
 				var pathOS = Path.Combine(Application.persistentDataPath, path.Replace('/', Path.DirectorySeparatorChar));
