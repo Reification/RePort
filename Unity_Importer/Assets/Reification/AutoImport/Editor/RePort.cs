@@ -527,18 +527,30 @@ namespace Reification {
 			ConfigureCombinedModels(completeModels, assembledModels);
 			var configured = BuildModelScenes(assembledModels);
 
-			// If only one model was imported, open it
-			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
-			
 			// In batch mode, export a package or bundle, then quit
-			if (Application.isBatchMode) {
-				// Export package for download to client editor
+			if(Application.isBatchMode) {
+				// Export package of configured scenes
+				// TODO: Import process needs to be staged
+				// (0) import (no unroll or backing), enable manual edits
+				// (1) lightmapping charts and baking (use packages)
+				// (2) client player compilation (use bundles)
+				var buildPath = "../../Builds";
+				var packageName = "RePort-Import";
+				EP.CreatePersistentPath(buildPath);
+				var fileName = (Application.dataPath + "/" + buildPath + "/" + packageName + ".unitypackage").Replace('/', Path.DirectorySeparatorChar);
+				AssetDatabase.ExportPackage(configured.ToArray(), fileName, ExportPackageOptions.IncludeDependencies);
+				// NOTE: Specifying IncludeDependencies will include packages that are used in the scene.
+				// This is necessary in order to include supported client assets that are purchased.
 				
-				// Export bundles for supported built targets (only if indicated by CLI)
+				// TODO: Export bundles for supported build targets (only if indicated by CLI)
 				
 				// ASSUME: Import is complete
+				// WARNING: "unity -batchmode -quit" will skip the import process
 				EditorApplication.Exit(0);
 			} else {
+				// If only one model was imported, open it
+				if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
+				
 				// End import by printing current version
 				Debug.Log($"RePort v{version}: success");
 			}
