@@ -500,9 +500,19 @@ namespace Reification {
 
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
-
-			// End import by printing current version
-			Debug.Log($"RePort v{version}: success");
+			
+			// In batch mode, export a package or bundle, then quit
+			if (Application.isBatchMode) {
+				// Export package for download to client editor
+				
+				// Export bundles for supported built targets (only if indicated by CLI)
+				
+				// ASSUME: Import is complete
+				EditorApplication.Exit(0);
+			} else {
+				// End import by printing current version
+				Debug.Log($"RePort v{version}: success");
+			}
 		}
 
 		// Combines partial models (meshes and levels of detail and prefab places) into complete models
