@@ -389,13 +389,13 @@ namespace Reification {
 		/// <summary>
 		/// Extracts and remaps textures for use by materials
 		/// </summary>
-		/// <returns>True if reimport is requied</returns>
+		/// <returns>True if reimport is required</returns>
 		/// <remarks>
 		/// IMPORTANT: In order for extracted textures to be remapped to materials
 		/// this must be called when AssetDatabase.StartAssetEditing() does not pertain
 		/// so that textures can be synchronously imported for remapping.
 		/// 
-		/// WARNING: In order to update model materials the model must be remiported:
+		/// WARNING: In order to update model materials the model must be reimported:
 		///  AssetDatabase.ImportAsset(modelPath)
 		/// 
 		/// For the implementation of the "Extract Textures" button 
@@ -498,18 +498,31 @@ namespace Reification {
 			AssembleComplete(completeModels, assembledModels);
 			var configured = ConfigureAssembled(assembledModels);
 
-			// If only one model was imported, open it
-			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
-			
 			// In batch mode, export a package or bundle, then quit
-			if (Application.isBatchMode) {
-				// Export package for download to client editor
+			if(Application.isBatchMode) {
+				// Export package of configured scenes
+				// TODO: Import process needs to be staged
+				// (0) import (no unroll or backing), enable manual edits
+				// (1) lightmapping charts and baking (use packages)
+				// (2) client player compilation (use bundles)
+				var buildPath = "../../Builds";
+				var packageName = "RePort-Import";
+				EP.CreatePersistentPath(buildPath);
+				var fileName = (Application.dataPath + "/" + buildPath + "/" + packageName + ".unitypackage").Replace('/', Path.DirectorySeparatorChar);
+				AssetDatabase.ExportPackage(configured.ToArray(), fileName, ExportPackageOptions.IncludeDependencies);
+				// NOTE: Specifying IncludeDependencies will include packages that are used in the scene.
+				// This is necessary in order to include supported client assets that are purchased.
 				
-				// Export bundles for supported built targets (only if indicated by CLI)
+				// TODO: Export bundles for supported build targets (only if indicated by CLI)
 				
 				// ASSUME: Import is complete
+				// PROBLEM: "unity -batchmode -quit" will skip the import process
+				// PROBLEM: If no import is specified then process will never quit
 				EditorApplication.Exit(0);
 			} else {
+				// If only one model was imported, open it
+				if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
+				
 				// End import by printing current version
 				Debug.Log($"RePort v{version}: success");
 			}
