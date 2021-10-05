@@ -622,6 +622,10 @@ namespace Reification {
 			}
 		}
 
+		// TEMP: This should be determined from user preferences
+		// or baking file existence
+		private static bool bakeLightmaps = false;
+
 		// Create scene for assembled model and generate lighting
 		static List<string> ConfigureAssembled(List<GameObject> assembledModels) {
 			var configuredScenes = new List<string>();
@@ -630,12 +634,28 @@ namespace Reification {
 				modelPath = modelPath.Substring(0, modelPath.Length - ".prefab".Length);
 				var scenePath = AutoScene.ApplyTo(modelPath, model);
 				// TODO: Hook to add configurable prefabs...
-				AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
-				// TODO: Hook to bake Reflections, Acoustics...
+				if (bakeLightmaps) {
+					// TODO: Lighting charts should be included
+					AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
+					// TODO: Hook to bake Reflections, Acoustics...
+				}
 				//Debug.Log($"Created scene : {scenePath}");
 				configuredScenes.Add(scenePath);
 			}
 			return configuredScenes;
+		}
+	
+		static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths) {
+			foreach (var assetPath in importedAssets) {
+				// Only apply RePort importing process to models in importPath
+				if(!assetPath.StartsWith(importPath)) continue;
+				ParseModelName(assetPath, out string path, out string name, out string element, out string exporter, out string type);
+				if (type == "unity") {
+					// QUESTION: Does this happen when scenes are created?
+					// QUESTION: Does this happen when packages are imported?
+					Debug.Log($"SCENE: {assetPath}");
+				}
+			}
 		}
 	}
 }
