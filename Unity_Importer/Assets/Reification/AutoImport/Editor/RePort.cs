@@ -158,21 +158,16 @@ namespace Reification {
 			
 			// Check for package to import
 			var arguments = Environment.GetCommandLineArgs();
+			//Debug.Log(String.Join(" ", arguments));
 			var packagePath = "";
-			for (var i = 0; i < arguments.Length - 1; ++i) {
+			for(var i = 0; i < arguments.Length - 1; ++i) {
 				if(arguments[i] != argumentFlag) continue;
 				packagePath = arguments[i + 1];
-				break;
+				// PROBLEM: RePort() may be executed multiple times during launch (uncomment CLI log to verify)
+				// SOLUTION: Register package and process to be invoked by editor
+				if(packagesImport.Count == 0) EditorApplication.update += ProcessPackagesImport;
+				packagesImport.Add(packagePath);
 			}
-			if (!File.Exists(packagePath)) return;
-			Debug.Log($"Import package: {packagePath}");
-			// FIXME: This is unsafe!
-			// Any scripts that are included in the package will be loaded.
-			// FIXME: The import process will overwrite existing scripts and assets,
-			// which can trigger a reimport when this script is reloaded.
-			/*
-			AssetDatabase.ImportPackage(packagePath, !Application.isBatchMode);
-			*/
 		}
 
 		static HashSet<string> extractionImport = new HashSet<string>();
@@ -654,10 +649,6 @@ namespace Reification {
 			}
 		}
 
-		// TEMP: This should be determined from user preferences
-		// or baking file existence
-		private static bool bakeLightmaps = false;
-
 		// Create scene for assembled model and generate lighting
 		static List<string> ConfigureAssembled(List<GameObject> assembledModels) {
 			var configuredScenes = new List<string>();
@@ -674,18 +665,49 @@ namespace Reification {
 	
 		static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths) {
 			foreach (var assetPath in importedAssets) {
+				// FIXME: Verify that scene path does not include subdirectory
+				
 				// Only apply RePort importing process to models in importPath
 				if(!assetPath.StartsWith(importPath)) continue;
 				ParseModelName(assetPath, out string path, out string name, out string element, out string exporter, out string type);
-				if (type == "unity") {
+				if(type == "unity") {
 					// TODO: Run locally if in batch mode, ask user if credentials exist
-					// QUESTION: Does this happen when scenes are created?
+					// QUESTION: Does this happen when scenes are created? ANSWER: Yes!
 					// QUESTION: Does this happen when packages are imported? ANSWER: Yes!
 					Debug.Log($"SCENE: {assetPath}");
 					// TODO: Lighting charts should be included here
+					/*
 					AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, assetPath);
+					*/
 					// TODO: Hook to bake Reflections, Acoustics...
 				}
+			}
+		}
+		
+		static HashSet<string> packagesImport = new HashSet<string>();
+		
+		static void ProcessPackagesImport() {
+			// Ensure that ProcessImportedModels is called only once per import batch
+			// IMPORTANT: Unregistering must occur before any possible import exception
+			// Otherwise the editor will stall while repeatedly attempting to import.
+			EditorApplication.update -= ProcessPackagesImport;
+			// PROBLEM: Unsubscribing from EditorApplication.update is not immediate - multiple callbacks may be received
+			// SOLUTION: Abort immediately if importAssets is empty
+			if(packagesImport.Count == 0) return;
+
+			foreach (var packagePath in packagesImport) {
+				if (!File.Exists(packagePath)) {
+					Debug.Log($"WARNING: -import-package {packagePath} does not exist!");
+					return;
+				}
+				Debug.Log($"Import package: {packagePath}");
+				// FIXME: This is unsafe!
+				// Any scripts that are included in the package will be loaded.
+				// FIXME: The import process will overwrite existing scripts and assets,
+				// which can trigger a reimport when this script is reloaded.
+				/*
+				AssetDatabase.ImportPackage(packagePath, !Application.isBatchMode);
+				*/
 			}
 		}
 	}
