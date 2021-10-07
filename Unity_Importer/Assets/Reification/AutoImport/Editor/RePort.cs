@@ -140,9 +140,39 @@ namespace Reification {
 			// QUESTION: How can conflicts be identified when editing importers?
 		}
 
+		/// <summary>
+		/// Command line argument to import a package
+		/// </summary>
+		/// <remarks>
+		/// Command line usage is flag followed by path:
+		///     unity -report-package [path]
+		/// If the package includes Assets/RePort/[scene].unity
+		/// scene preprocessing will be run and the result will be exported
+		/// as a bundle.
+		/// </remarks>
+		public const string argumentFlag = "-import-package";
+		
 		public RePort() {
 			// Ensure that import path exists
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
+			
+			// Check for package to import
+			var arguments = Environment.GetCommandLineArgs();
+			var packagePath = "";
+			for (var i = 0; i < arguments.Length - 1; ++i) {
+				if(arguments[i] != argumentFlag) continue;
+				packagePath = arguments[i + 1];
+				break;
+			}
+			if (!File.Exists(packagePath)) return;
+			Debug.Log($"Import package: {packagePath}");
+			// FIXME: This is unsafe!
+			// Any scripts that are included in the package will be loaded.
+			// FIXME: The import process will overwrite existing scripts and assets,
+			// which can trigger a reimport when this script is reloaded.
+			/*
+			AssetDatabase.ImportPackage(packagePath, !Application.isBatchMode);
+			*/
 		}
 
 		static HashSet<string> extractionImport = new HashSet<string>();
@@ -595,6 +625,8 @@ namespace Reification {
 					// NOTE: Modifications will not alter original assets, since copies are now being used
 					var gatherer = new GatherAssets.AssetGatherer(searchPath);
 					gatherer.SwapAssets(model);
+					
+					// TODO: Provide a hook to replace imported models with Unity prefabs (e.g. SpeedTree)
 
 					// Configure the complete model
 					AutoLOD.ApplyTo(model);
@@ -634,11 +666,6 @@ namespace Reification {
 				modelPath = modelPath.Substring(0, modelPath.Length - ".prefab".Length);
 				var scenePath = AutoScene.ApplyTo(modelPath, model);
 				// TODO: Hook to add configurable prefabs...
-				if (bakeLightmaps) {
-					// TODO: Lighting charts should be included
-					AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
-					// TODO: Hook to bake Reflections, Acoustics...
-				}
 				//Debug.Log($"Created scene : {scenePath}");
 				configuredScenes.Add(scenePath);
 			}
@@ -651,9 +678,13 @@ namespace Reification {
 				if(!assetPath.StartsWith(importPath)) continue;
 				ParseModelName(assetPath, out string path, out string name, out string element, out string exporter, out string type);
 				if (type == "unity") {
+					// TODO: Run locally if in batch mode, ask user if credentials exist
 					// QUESTION: Does this happen when scenes are created?
-					// QUESTION: Does this happen when packages are imported?
+					// QUESTION: Does this happen when packages are imported? ANSWER: Yes!
 					Debug.Log($"SCENE: {assetPath}");
+					// TODO: Lighting charts should be included here
+					AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, assetPath);
+					// TODO: Hook to bake Reflections, Acoustics...
 				}
 			}
 		}
