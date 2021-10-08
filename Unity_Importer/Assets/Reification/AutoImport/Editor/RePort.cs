@@ -150,7 +150,7 @@ namespace Reification {
 		/// scene preprocessing will be run and the result will be exported
 		/// as a bundle.
 		/// </remarks>
-		public const string argumentFlag = "-import-package";
+		public const string importPackageFlag = "-import-package";
 		
 		public RePort() {
 			// Ensure that import path exists
@@ -158,10 +158,10 @@ namespace Reification {
 			
 			// Check for package to import
 			var arguments = Environment.GetCommandLineArgs();
-			//Debug.Log(String.Join(" ", arguments));
+			Debug.Log(String.Join(" ", arguments));
 			var packagePath = "";
 			for(var i = 0; i < arguments.Length - 1; ++i) {
-				if(arguments[i] != argumentFlag) continue;
+				if(arguments[i] != importPackageFlag) continue;
 				packagePath = arguments[i + 1];
 				// PROBLEM: RePort() may be executed multiple times during launch (uncomment CLI log to verify)
 				// SOLUTION: Register package and process to be invoked by editor
@@ -626,22 +626,14 @@ namespace Reification {
 				var scenePath = AutoScene.ApplyTo(modelPath, model);
 				// TODO: Hook to add configurable prefabs...
 				Debug.Log($"Created scene : {scenePath}");
+				// TODO: Run locally if in batch mode, ask user if credentials exist
 				configuredScenes.Add(scenePath);
 				if (configuredScenes.Count == 1) EditorApplication.update += ProcessConfiguredScenes;
 			}
 		}
 
-		static HashSet<string> processedAssets = new HashSet<string>();
-
 		static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths) {
 			foreach (var assetPath in importedAssets) {
-				// PROBLEM: During lightmap bake scene will be reimported multiple times
-				// TEMP: Instead of this, avoid re-processing lightmaps when update is imported.
-				if (processedAssets.Contains(assetPath)) {
-					Debug.Log($"Already processed asset: ");
-					continue;
-				}
-				processedAssets.Add(assetPath);
 				// FIXME: This is ONLY needed when importing a package
 				// FIXME: Verify that scene path does not include subdirectory
 				
@@ -649,17 +641,30 @@ namespace Reification {
 				if(!assetPath.StartsWith(importPath)) continue;
 				ParseModelName(assetPath, out string path, out string name, out string element, out string exporter, out string type);
 				if(type == "unity") {
-					// TODO: Run locally if in batch mode, ask user if credentials exist
 					// QUESTION: Does this happen when scenes are created? ANSWER: Yes!
 					// QUESTION: Does this happen when packages are imported? ANSWER: Yes!
-					// PROBLEM: This happens in the case of ANY saved scene change
-					Debug.Log($"Imported scene: {assetPath}");
-					configuredScenes.Add(assetPath);
-					if (configuredScenes.Count == 1) EditorApplication.update += ProcessConfiguredScenes;
+					
+					// FIXME: This is invoked happens in the case of ANY saved scene change
+					// which will force scenes to re-bake lighting if cleared and saved.
+					// SOLUTION: This should only apply to imported packages, but that requires
+					// knowing what is being imported!
+					
+					// PROBLEM: Postprocess will be invoked multiple times during lightmap baking
+					// SOLUTION: Ignore until configured scene processing has completed
+					if(!configuredScenes.Contains(assetPath)) {
+						configuredScenes.Add(assetPath);
+						if (configuredScenes.Count == 1) EditorApplication.update += ProcessConfiguredScenes;
+					}
 				}
 			}
 		}
 
+		static bool LightingDataExists(string scenePath) {
+			var lightingPath = scenePath.Substring("Assets/".Length, scenePath.Length - "Assets/".Length - ".unity".Length) + "/LightingData.asset";
+			lightingPath = Path.Combine(Application.dataPath, lightingPath).Replace('/', Path.DirectorySeparatorChar);
+			return File.Exists(lightingPath);
+		}
+		
 		static HashSet<string> configuredScenes = new HashSet<string>();
 
 		static void ProcessConfiguredScenes() {
@@ -673,15 +678,17 @@ namespace Reification {
 			// SOLUTION: Identify scenes to be processed, then invoke ProcessConfiguredScenes
 			// after AssetEditing has ended
 			try {
-				foreach (var scenePath in configuredScenes) {
+				foreach(var scenePath in configuredScenes) {
 					// TODO: Lighting charts should be included here
 					// OPTION: Combine all scenes into unified bake
 					// FIXME: Do not re-bake if imported scene includes lightmaps
-					Debug.Log($"Begin lightmap bake for {scenePath}");
-					AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
+					if(!LightingDataExists(scenePath)) {
+						Debug.Log($"Begin lightmap bake for {scenePath}");
+						AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
+					}
 					// TODO: Hook to bake Reflections, Acoustics...
 				}
-			} catch (System.Exception e) {
+			} catch(System.Exception e) {
 				Debug.LogError($"ProcessImportedModels failed with error:\n{e.Message}");
 				return;
 			} finally {
@@ -699,6 +706,7 @@ namespace Reification {
 				var buildPath = "../../Builds";
 				var packageName = "RePort-Import";
 				EP.CreatePersistentPath(buildPath);
+				// TODO: Use import package name for export
 				var fileName = (Application.dataPath + "/" + buildPath + "/" + packageName + ".unitypackage").Replace('/', Path.DirectorySeparatorChar);
 				AssetDatabase.ExportPackage(configured.ToArray(), fileName, ExportPackageOptions.IncludeDependencies);
 				// NOTE: Specifying IncludeDependencies will include packages that are used in the scene.
@@ -717,9 +725,6 @@ namespace Reification {
 			// OPTION: Open all scenes
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
-				
-			// End import by printing current version
-			Debug.Log($"RePort v{version}: success");
 		}
 
 		static HashSet<string> packagesImport = new HashSet<string>();
@@ -731,10 +736,11 @@ namespace Reification {
 			// NOTE: Multiple packages can be imported using command line
 			// OPTION: Import in order and break on first failure
 			// OPTION: Continue importing even if some packages fail
+			// IDEA: Look for comma separated values to identify sequential packages.
 			try {
 				foreach(var packagePath in packagesImport) {
 					if (!File.Exists(packagePath)) {
-						Debug.Log($"WARNING: -import-package {packagePath} does not exist!");
+						Debug.Log($"WARNING: {importPackageFlag} {packagePath} does not exist!");
 						return;
 					}
 
@@ -743,6 +749,8 @@ namespace Reification {
 					// Any scripts that are included in the package will be loaded.
 					// FIXME: The import process will overwrite existing scripts and assets,
 					// which can trigger a reimport when this script is reloaded.
+					// NOTE: If package contacts are reviewed before import, it would be helpful
+					// to create a catalogue of contents. This would enable importing to be structured.
 					AssetDatabase.ImportPackage(packagePath, !Application.isBatchMode);
 				}
 			} catch(System.Exception e) {
