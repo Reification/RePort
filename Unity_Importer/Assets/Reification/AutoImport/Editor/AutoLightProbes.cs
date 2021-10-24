@@ -53,17 +53,10 @@ namespace Reification {
 		// FIXME: Light probes should be added as a separate component
 		// otherwise they will only be displayed by a top-level selection
 
-		// FIXME: Proxy volume scale is proportionate to object scale,
-		// so rescaled objects need to be adjusted accordingly
-
 		// FIXME: This should be based on the lightmap resolution (specifically, indirect)
 		// NOTE: Light probe proxy volumes should not exceed this resolution.
 		// IDEA: Read in the scene lighting configuration to determine this.
 		public static Vector3 probeSpaces = new Vector3(0.5f, 0.5f, 0.5f); // meters between probes
-
-		// PROBLEM: ProxyVolumes always update, even when the associated level of detail will not render
-		// IDEA: Proxy volume updates are controlled by script
-		// IDEA: Reduce proxy volume resolution based on level of detail
 
 		public static int ProxyResolution(float spaceRatio) => Mathf.ClosestPowerOfTwo(Mathf.FloorToInt(Mathf.Clamp(spaceRatio, 2f, 32f)));
 
@@ -84,8 +77,10 @@ namespace Reification {
 					if(meshRender) meshRender.receiveGI = ReceiveGI.LightProbes;
 
 					// If renderer is large, configure it to use a proxy volume
-					// NOTE: Renderer bounds are computed in world coordinates.
-					// For some objects, the majority of the proxy volume may be unused.
+					// NOTE: Renderer bounds are computed in world coordinates,
+					// so for some objects, the majority of the proxy volume may be unused.
+					// TODO: Proxy volume should be in local coordinates of the object.
+					// IDEA: This can be improved by partitioning the object.
 					var bounds = renderer.bounds;
 					var useProxy = false;
 					for(var i = 0; i < 3; ++i) useProxy |= bounds.size[i] > probeSpaces[i];
@@ -194,14 +189,15 @@ namespace Reification {
 			return probeState;
 		}
 
-		static Vector3 ProbesOrigin(Bounds bounds) {
-			var origin = Vector3.zero;
+		static void ProbesBounds(Bounds bounds, out Vector3 origin, out Vector3Int counts) {
+			origin = Vector3.zero;
+			counts = Vector3Int.zero;
 			for(int i = 0; i < 3; ++i) {
-				var count = Mathf.CeilToInt(2f * bounds.extents[i] / probeSpaces[i]);
-				var envelope = count * probeSpaces[i];
+				counts[i] = Mathf.CeilToInt(bounds.size[i] / probeSpaces[i]);
+				var envelope = counts[i] * probeSpaces[i];
 				origin[i] = bounds.center[i] - envelope / 2f;
+				counts[i] += 1;
 			}
-			return origin;
 		}
 
 		// TODO: Move this to bounds extension.
@@ -225,13 +221,14 @@ namespace Reification {
 
 		// TODO: Probe layout should be in local coordinates of GameObject
 
-		// IDEA: In the absence of visible dynamic object, probes only provides illumination to lower LoD objects.
+		// IDEA: In the absence of a visible dynamic object, probes only provides illumination to lower LoD objects.
 		// Consequently, if a probe does not provide lighting information for any lower levels of detail it could be removed.
 		// This can be tested with a volume overlap.
 
 		// IDEA: When light probes all touch one large object, decimate probes acording to object scale in lightmap.
 		// TODO: This requires downscaling large object lightmaps (or even partitioning the objects)
 		// NOTE: Large objects are converted to contributing with probes off.
+		// IDEA: For small detail objects, the probe spacing could be up-sampled.
 
 		/// <summary>
 		/// Generate a grid of probe points adjacent to surfaces
@@ -243,16 +240,18 @@ namespace Reification {
 		/// <param name="probeSpaces">Spacing of probe grid</param>
 		public static Vector3[] LightProbeGrid(GameObject gameObject, Vector3 probeSpaces) {
 			var worldBounds = RendererWorldBounds(gameObject);
-			var worldOrigin = ProbesOrigin(worldBounds);
+			ProbesBounds(worldBounds, out var worldOrigin, out var counts);
 			var probePointList = new List<Vector3>();
-			var point = Vector3.zero;
-			for(point[0] = worldOrigin[0]; point[0] < worldBounds.max[0] + probeSpaces[0]; point[0] += probeSpaces[0])
-				for(point[1] = worldOrigin[1]; point[1] < worldBounds.max[1] + probeSpaces[1]; point[1] += probeSpaces[1])
-					for(point[2] = worldOrigin[2]; point[2] < worldBounds.max[2] + probeSpaces[2]; point[2] += probeSpaces[2]) {
+			for(var x = 0; x < counts[0]; ++x) {
+				for(var y = 0; y < counts[1]; ++y) {
+					for(var z = 0; z < counts[2]; ++z) {
+						var point = worldOrigin + new Vector3(x * probeSpaces[0], y * probeSpaces[1], z * probeSpaces[2]);
 						var probeState = GetProbeState(point, gameObject);
 						if(probeState != ProbeState.Surface) continue;
 						probePointList.Add(gameObject.transform.InverseTransformPoint(point));
 					}
+				}
+			}
 			return probePointList.ToArray();
 		}
 	}
