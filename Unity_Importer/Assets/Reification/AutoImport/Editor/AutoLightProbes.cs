@@ -193,7 +193,8 @@ namespace Reification {
 			origin = Vector3.zero;
 			counts = Vector3Int.zero;
 			for(int i = 0; i < 3; ++i) {
-				counts[i] = Mathf.CeilToInt(bounds.size[i] / probeSpaces[i]);
+				// Minimum and maximum surfaces must permit offset probe placement, so add 2 for the case of an exact fit
+				counts[i] = Mathf.CeilToInt(bounds.size[i] / probeSpaces[i]) + 2;
 				var envelope = counts[i] * probeSpaces[i];
 				origin[i] = bounds.center[i] - envelope / 2f;
 				counts[i] += 1;
