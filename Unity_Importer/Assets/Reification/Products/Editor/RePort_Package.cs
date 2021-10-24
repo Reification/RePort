@@ -31,6 +31,7 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Editor/AutoLightSources.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightmaps.cs",
 			"Assets/Reification/AutoImport/Editor/Importers/RhinoImporters.cs",
+			"Assets/Reification/AutoImport/Scripts/LightProbeProxyUpdate.cs",
 			"Assets/Reification/AutoImport/Shaders/StandardCrossfade.shader",
 			"Assets/Reification/AutoImport/Settings/FastLightmaps.giparams",
 			"Assets/Reification/AutoImport/Settings/GoodLightmaps.giparams",
