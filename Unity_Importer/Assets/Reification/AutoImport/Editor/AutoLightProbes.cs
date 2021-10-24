@@ -48,29 +48,18 @@ namespace Reification {
 			CreateLightProbes(gameObject);
 		}
 
-		// IDEA: Probes spaces should be relative to light-map detail.
-		// So probe grid should be regenerated when configuring lighting.
+		// FIXME: Scene bounding volume needs padding (probes are missing from top
 
+		// FIXME: Light probes should be added as a separate component
+		// otherwise they will only be displayed by a top-level selection
+
+		// FIXME: Proxy volume scale is proportionate to object scale,
+		// so rescaled objects need to be adjusted accordingly
+
+		// FIXME: This should be based on the lightmap resolution (specifically, indirect)
+		// NOTE: Light probe proxy volumes should not exceed this resolution.
+		// IDEA: Read in the scene lighting configuration to determine this.
 		public static Vector3 probeSpaces = new Vector3(0.5f, 0.5f, 0.5f); // meters between probes
-
-		// TODO: Move this to bounds extension.
-		/// <summary>
-		/// Get world bounds of all child renderers
-		/// </summary>
-		public static Bounds RendererWorldBounds(GameObject gameObject) {
-			var bounds = new Bounds();
-			var emptyBounds = true;
-			var objectRenderers = gameObject.GetComponentsInChildren<Renderer>();
-			foreach(var renderer in objectRenderers) {
-				if(emptyBounds) {
-					bounds = renderer.bounds;
-					emptyBounds = false;
-				} else {
-					bounds.Encapsulate(renderer.bounds);
-				}
-			}
-			return bounds;
-		}
 
 		// PROBLEM: ProxyVolumes always update, even when the associated level of detail will not render
 		// IDEA: Proxy volume updates are controlled by script
@@ -82,57 +71,51 @@ namespace Reification {
 		/// Configure the light probe proxy volume for lower levels of detail in group
 		/// </summary>
 		public static void ConfigureLODGroup(LODGroup lodGroup) {
-			// TODO: Check if group is static - if not, also configure the lowest level of detail.
-
-			// Only lower levels of detail will use probes
-			// IMPORTANT: Proxy volumes always update, so only generate them if they will be used.
 			var lods = lodGroup.GetLODs();
-			if(lods.Length < 2) return;
+			for(var level = 1; level < lods.Length; ++level) {
+				// TODO: Check if group is static - if not, also configure the level 0 detail,
+				// and treat levels as if incremented by 1, so level 0 has proxy spacing equal to probe spacing
 
-			// FIXME: Local bounds are needed
-			var worldBounds = RendererWorldBounds(lodGroup.gameObject);
-			// TEMP: Assume that only axis swaps pertain
-			var localBounds = new Bounds();
-			localBounds.center = lodGroup.transform.InverseTransformPoint(worldBounds.center);
-			localBounds.size = lodGroup.transform.InverseTransformDirection(worldBounds.size);
-			localBounds.size = new Vector3(Mathf.Abs(localBounds.size.x), Mathf.Abs(localBounds.size.y), Mathf.Abs(localBounds.size.z));
-
-			// If object bounds > probe spacing in any dimension use a proxy volume
-			var useProxy = false;
-			for(var i = 0; i < 3; ++i) useProxy |= localBounds.size[i] > probeSpaces[i];
-			var proxy = lodGroup.gameObject.GetComponent<LightProbeProxyVolume>();
-			if(useProxy) {
-				if(!proxy) proxy = EP.AddComponent<LightProbeProxyVolume>(lodGroup.gameObject);
-
-				// Configure proxy bounds
-				proxy.boundingBoxMode = LightProbeProxyVolume.BoundingBoxMode.Custom;
-				proxy.originCustom = localBounds.center;
-				proxy.sizeCustom = localBounds.size;
-
-				// Configure spacing
-				proxy.probePositionMode = LightProbeProxyVolume.ProbePositionMode.CellCorner;
-				proxy.resolutionMode = LightProbeProxyVolume.ResolutionMode.Custom;
-				proxy.gridResolutionX = ProxyResolution(localBounds.size.x / probeSpaces.x);
-				proxy.gridResolutionY = ProxyResolution(localBounds.size.y / probeSpaces.y);
-				proxy.gridResolutionZ = ProxyResolution(localBounds.size.z / probeSpaces.z);
-
-				// Remaining settings
-				proxy.qualityMode = LightProbeProxyVolume.QualityMode.Normal;
-				proxy.refreshMode = LightProbeProxyVolume.RefreshMode.Automatic;
-			} else {
-				if(proxy) EP.Destroy(proxy);
-				proxy = null;
-			}
-
-			// Configure all lower levels of detail to use probes
-			for(var l = 1; l < lods.Length; ++l) {
-				foreach(var renderer in lods[l].renderers) {
-					renderer.lightProbeUsage = useProxy ? UnityEngine.Rendering.LightProbeUsage.UseProxyVolume : UnityEngine.Rendering.LightProbeUsage.BlendProbes;
-					renderer.lightProbeProxyVolumeOverride = lodGroup.gameObject;
+				foreach(var renderer in lods[level].renderers) {
+					var proxy = renderer.GetComponent<LightProbeProxyVolume>();
+					var proxyUpdate = renderer.GetComponent<LightProbeProxyUpdate>();
 
 					var meshRender = renderer as MeshRenderer;
-					if(!meshRender) continue;
-					meshRender.receiveGI = ReceiveGI.LightProbes;
+					if(meshRender) meshRender.receiveGI = ReceiveGI.LightProbes;
+
+					// If renderer is large, configure it to use a proxy volume
+					// NOTE: Renderer bounds are computed in world coordinates.
+					// For some objects, the majority of the proxy volume may be unused.
+					var bounds = renderer.bounds;
+					var useProxy = false;
+					for(var i = 0; i < 3; ++i) useProxy |= bounds.size[i] > probeSpaces[i];
+					if(!useProxy) {
+						if(proxy) EP.Destroy(proxy);
+						if(proxyUpdate) EP.Destroy(proxyUpdate);
+						renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
+						continue;
+					}
+
+					if(!proxy) proxy = EP.AddComponent<LightProbeProxyVolume>(renderer.gameObject);
+					if(!proxyUpdate) proxyUpdate = EP.AddComponent<LightProbeProxyUpdate>(renderer.gameObject);
+
+					// Configure proxy bounds
+					proxy.boundingBoxMode = LightProbeProxyVolume.BoundingBoxMode.AutomaticWorld;
+
+					// Configure spacing
+					proxy.probePositionMode = LightProbeProxyVolume.ProbePositionMode.CellCorner;
+					proxy.resolutionMode = LightProbeProxyVolume.ResolutionMode.Custom;
+					var levelSpaces = probeSpaces * Mathf.Pow(2, level - 1);
+					proxy.gridResolutionX = ProxyResolution(bounds.size.x / levelSpaces.x);
+					proxy.gridResolutionY = ProxyResolution(bounds.size.y / levelSpaces.y);
+					proxy.gridResolutionZ = ProxyResolution(bounds.size.z / levelSpaces.z);
+
+					// Remaining settings
+					proxy.qualityMode = level < 2 ? LightProbeProxyVolume.QualityMode.Normal : LightProbeProxyVolume.QualityMode.Low;
+					proxy.refreshMode = LightProbeProxyVolume.RefreshMode.ViaScripting;
+
+					renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.UseProxyVolume;
+					renderer.lightProbeProxyVolumeOverride = null;
 				}
 			}
 		}
@@ -219,6 +202,25 @@ namespace Reification {
 				origin[i] = bounds.center[i] - envelope / 2f;
 			}
 			return origin;
+		}
+
+		// TODO: Move this to bounds extension.
+		/// <summary>
+		/// Get world bounds of all child renderers
+		/// </summary>
+		public static Bounds RendererWorldBounds(GameObject gameObject) {
+			var bounds = new Bounds();
+			var emptyBounds = true;
+			var objectRenderers = gameObject.GetComponentsInChildren<Renderer>();
+			foreach(var renderer in objectRenderers) {
+				if(emptyBounds) {
+					bounds = renderer.bounds;
+					emptyBounds = false;
+				} else {
+					bounds.Encapsulate(renderer.bounds);
+				}
+			}
+			return bounds;
 		}
 
 		// TODO: Probe layout should be in local coordinates of GameObject
