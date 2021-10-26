@@ -53,7 +53,7 @@ namespace Reification {
 		// FIXME: Light probes should be added as a separate component
 		// otherwise they will only be displayed by a top-level selection
 
-		// FIXME: This should be based on the lightmap resolution (specifically, indirect)
+		// FIXME: This should be based on the lightmap indirect resolution
 		// NOTE: Light probe proxy volumes should not exceed this resolution.
 		// IDEA: Read in the scene lighting configuration to determine this.
 		public static Vector3 probeSpaces = new Vector3(0.5f, 0.5f, 0.5f); // meters between probes
@@ -81,15 +81,19 @@ namespace Reification {
 					// so for some objects, the majority of the proxy volume may be unused.
 					// TODO: Proxy volume should be in local coordinates of the object.
 					// IDEA: This can be improved by partitioning the object.
+					var levelSpaces = probeSpaces * Mathf.Pow(2, level - 1);
 					var bounds = renderer.bounds;
 					var useProxy = false;
-					for(var i = 0; i < 3; ++i) useProxy |= bounds.size[i] > probeSpaces[i];
+					for(var i = 0; i < 3; ++i) useProxy |= bounds.size[i] > levelSpaces[i];
 					if(!useProxy) {
 						if(proxy) EP.Destroy(proxy);
 						if(proxyUpdate) EP.Destroy(proxyUpdate);
 						renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
 						continue;
 					}
+
+					// TEMP: Only create proxies for lower levels of detail
+					if(level > 1) useProxy = false;
 
 					if(!proxy) proxy = EP.AddComponent<LightProbeProxyVolume>(renderer.gameObject);
 					if(!proxyUpdate) proxyUpdate = EP.AddComponent<LightProbeProxyUpdate>(renderer.gameObject);
@@ -100,7 +104,6 @@ namespace Reification {
 					// Configure spacing
 					proxy.probePositionMode = LightProbeProxyVolume.ProbePositionMode.CellCorner;
 					proxy.resolutionMode = LightProbeProxyVolume.ResolutionMode.Custom;
-					var levelSpaces = probeSpaces * Mathf.Pow(2, level - 1);
 					proxy.gridResolutionX = ProxyResolution(bounds.size.x / levelSpaces.x);
 					proxy.gridResolutionY = ProxyResolution(bounds.size.y / levelSpaces.y);
 					proxy.gridResolutionZ = ProxyResolution(bounds.size.z / levelSpaces.z);
