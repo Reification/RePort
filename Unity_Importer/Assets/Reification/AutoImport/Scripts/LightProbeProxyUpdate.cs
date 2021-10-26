@@ -8,6 +8,49 @@ using UnityEngine;
 public class LightProbeProxyUpdate: MonoBehaviour {
 	LightProbeProxyVolume proxy;
 
+	static float targetPeriod = 1f / 20f; // Target frame duration TODO: This should be derived
+	static float adjustUpdate = 10000; // Proxy count adjustment relative to target frame period
+
+	static int proxyLimit = 0; // Proxy update limit, rounded up by volume
+	static int buildFrame = -1;
+	static List<LightProbeProxyUpdate> frameQueue = new List<LightProbeProxyUpdate>();
+	static List<LightProbeProxyUpdate> buildQueue = new List<LightProbeProxyUpdate>();
+
+	static void UpdateQueue(int proxyCount) {
+		if(buildFrame == Time.frameCount) return;
+		buildFrame = Time.frameCount;
+
+		// Swap queues
+		frameQueue = buildQueue;
+		buildQueue = new List<LightProbeProxyUpdate>();
+
+		// Sort queue
+		frameQueue.Sort((l, r) =>
+			l.queueScore < r.queueScore ? -1:
+			l.queueScore > r.queueScore ? 1:
+			0
+		);
+
+		// Determine update priority in queue
+		var prior = 0;
+		for(var index = 0; index < frameQueue.Count; ++index) {
+			var update = frameQueue[index];
+			update.priorCount = prior;
+			prior += proxyCount;
+		}
+
+		// Adjust proxy limit
+		proxyLimit += Mathf.FloorToInt((targetPeriod - Time.deltaTime) * adjustUpdate);
+		Debug.Log($"Frame period = {Time.deltaTime} -> proxy limit = {proxyLimit}");
+	}
+
+	int lastQueued = -1; // Last queued frame
+	int lastUpdate = -1; // Last updated frame
+	int priorCount = -1; // Count of all prior proxies in queue
+	float queueScore = 0f; // Score of volume in queue
+
+	int proxyCount = 0; // Count of probes in proxy volume
+
 	private void Start() {
 		proxy = GetComponent<LightProbeProxyVolume>();
 		if(!proxy) {
@@ -16,12 +59,43 @@ public class LightProbeProxyUpdate: MonoBehaviour {
 			return;
 		}
 		proxy.refreshMode = LightProbeProxyVolume.RefreshMode.ViaScripting;
+
+		proxyCount = proxy.gridResolutionX * proxy.gridResolutionY * proxy.gridResolutionZ;
+
+		Enqueue();
+	}
+
+	private void Update() {
+		UpdateQueue(proxyCount);
 	}
 
 	private void OnWillRenderObject() {
 		// NOTE: OnWillRenderObject is not called for non-rendering LOD.
 		//Debug.Log($"Will render {gameObject.name}");
-		proxy.Update();
+
+		// IMPORTANT: Because proxyPrior is used, if proxyLimit > 0 then
+		// at least one proxy volume will update in every frame.
+		if(0 <= priorCount && priorCount < proxyLimit) {
+			proxy.Update();
+			lastUpdate = Time.frameCount;
+			priorCount = -1;
+		}
+
+		Enqueue();
+	}
+
+	private void Enqueue() {
+		if(lastQueued == Time.frameCount) return;
+		lastQueued = Time.frameCount;
+
+		// TODO: Score is product of object radius * delta-time * viewing distance / center pixel angle
+		// NOTE: If there are multiple cameras, use the minimum d / a.
+		// NOTE: Ideal would be scale in view of player.
+
+		// TEMP: Add randomly, and order by time
+		var frameDelta = 1 + Time.frameCount - lastUpdate;
+		queueScore = frameDelta;
+		buildQueue.Add(this);
 
 		// TODO: Each frame builds a priority queue for the next frame
 		// and determines whether to update based on its position in the queue
@@ -38,5 +112,6 @@ public class LightProbeProxyUpdate: MonoBehaviour {
 		// TODO: Lower levels of detail should have lower update priority. This could also be determined
 		// by assessing distance from the renderer (Camera.current identifies renderer in this call).
 		// TODO: Queue can be budgeted based on proxy resolution.
+
 	}
 }
