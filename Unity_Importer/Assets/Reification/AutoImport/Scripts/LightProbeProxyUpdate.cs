@@ -17,17 +17,17 @@ namespace Reification {
 	public class LightProbeProxyUpdate: MonoBehaviour {
 		LightProbeProxyVolume proxy;
 
-		static float targetPeriod = 1f / 20f; // Target frame duration TODO: This should be derived
-		static float adjustUpdate = 1000; // Proxy count adjustment relative to target frame period
-
+		public static float targetPeriod = 1f / 5f; // Target frame duration TODO: This should be derived
+		public static float adjustUpdate = 1000; // Proxy count adjustment relative to target frame period
 		static int proxyLimit = 0; // Proxy update limit, rounded up by volume
-		static int buildFrame = -1;
+
+		static int updateQueueFrame = -1;
 		static List<LightProbeProxyUpdate> frameQueue = new List<LightProbeProxyUpdate>();
 		static List<LightProbeProxyUpdate> buildQueue = new List<LightProbeProxyUpdate>();
 
 		static void UpdateQueue(int proxyCount) {
-			if(buildFrame == Time.frameCount) return;
-			buildFrame = Time.frameCount;
+			if(updateQueueFrame == Time.frameCount) return;
+			updateQueueFrame = Time.frameCount;
 
 			// Swap queues
 			frameQueue = buildQueue;
@@ -41,20 +41,87 @@ namespace Reification {
 			);
 
 			// Determine update priority in queue
-			var prior = 0;
+			var priorCount = 0;
 			for(var index = 0; index < frameQueue.Count; ++index) {
 				var update = frameQueue[index];
-				update.priorCount = prior;
-				prior += proxyCount;
+				update.priorCount = priorCount;
+				priorCount += proxyCount;
 			}
 
 			// Adjust proxy limit
+			// WARNING: In editor, rendered frame rate may be much less than profiled frame rate
 			proxyLimit += Mathf.FloorToInt((targetPeriod - Time.deltaTime) * adjustUpdate);
-			Debug.Log($"Frame period = {Time.deltaTime} -> proxy limit = {proxyLimit}");
+			//Debug.Log($"Frame period = {Time.deltaTime} -> target delta = {targetPeriod - Time.deltaTime} -> proxy limit = {proxyLimit}");
+
+			// Limit growth of proxy limit
+			if(proxyLimit > priorCount) proxyLimit = priorCount;
+
+			// Ensure at least one update occurs
+			if(proxyLimit <= 0) proxyLimit = 1;
+		}
+
+		public static float intensityChange = 0.1f;  // Rendered intensity, in any channel
+		public static float directionChange = 1.0f;  // Degrees, of directional light
+		// TODO: Update for a point light should use direction to light, scaled by distance to light
+		// NOTE: Lights can derive their own change assessments, including position change
+
+		static int updateLightsFrame = -1;
+
+		public class LightState {
+			Light light;
+			bool lastEnabled = false;
+			Vector4 lastIntensity = Vector4.zero;
+			Quaternion lastRotation = Quaternion.identity;
+
+			public LightState(Light light) {
+				this.light = light;
+				Update();
+			}
+
+			public bool Update() {
+				var change = false;
+				var nextEnabled = light.isActiveAndEnabled && light.intensity > 0;
+				change |= nextEnabled != lastEnabled;
+				Vector4 nextIntensity = light.color * light.intensity;
+				change |= (nextIntensity - lastIntensity).magnitude > intensityChange;
+				var nextRotation = light.transform.rotation;
+				change |= Vector3.Angle(lastRotation * Vector3.forward, nextRotation * Vector3.forward) > directionChange;
+				if(change) {
+					lastEnabled = nextEnabled;
+					lastIntensity = nextIntensity;
+					lastRotation = nextRotation;
+					//Debug.Log($"Light {this.light.Path()} changed");
+				}
+				return change;
+			}
+		}
+
+		public static List<LightState> lightStates = new List<LightState>();
+		static bool lightsChanged = false;
+
+		static void StartLights() {
+			if(updateLightsFrame >= 0) return;
+
+			var lightList = FindObjectsOfType<Light>();
+			foreach(var light in lightList) {
+				// NOTE: Mixed lights only modify direct lighting
+				if(light.lightmapBakeType != LightmapBakeType.Realtime) continue;
+				lightStates.Add(new LightState(light));
+			}
+		}
+
+		static void UpdateLights() {
+			StartLights();
+			if(updateLightsFrame == Time.frameCount) return;
+			updateLightsFrame = Time.frameCount;
+
+			lightsChanged = false;
+			foreach(var lightState in lightStates) lightsChanged |= lightState.Update();
 		}
 
 		int lastQueued = -1; // Last queued frame
 		int lastUpdate = -1; // Last updated frame
+		int lastChange = -1; // Last lighting change frame
 		int priorCount = -1; // Count of all prior proxies in queue
 		float queueScore = 0f; // Score of volume in queue
 
@@ -71,59 +138,55 @@ namespace Reification {
 
 			proxyCount = proxy.gridResolutionX * proxy.gridResolutionY * proxy.gridResolutionZ;
 
+			UpdateLights();
+
+			// Ensure that first frame has updates enqueued
 			Enqueue();
 		}
 
 		private void Update() {
+			UpdateLights();
 			UpdateQueue(proxyCount);
 		}
 
 		private void OnWillRenderObject() {
 			// NOTE: OnWillRenderObject is not called for non-rendering LOD.
 			//Debug.Log($"Will render {gameObject.name}");
+			// QUESTION: Is OnWillRenderObject called for culled objects?
 
-			// IMPORTANT: Because proxyPrior is used, if proxyLimit > 0 then
-			// at least one proxy volume will update in every frame.
+			// IMPORTANT: Because priorCount does not include proxyCount, 
+			// if proxyLimit > 0 then at least one proxy volume will update in every frame.
 			if(0 <= priorCount && priorCount < proxyLimit) {
+				Debug.Log($"Proxy {this.gameObject.name} frame = {Time.frameCount} -> delta = {Time.frameCount - lastUpdate} && priorCount = {priorCount} < proxyLimit = {proxyLimit}");
 				proxy.Update();
 				lastUpdate = Time.frameCount;
-				priorCount = -1;
 			}
+			// IMPORTANT: Update only once in each frame, even if multiple cameras are rendering,
+			// and do not update unless enqueued
+			priorCount = -1;
 
 			Enqueue();
 		}
 
 		private void Enqueue() {
-			// IMPORTANT: Only enqueue once each frame when multiple cameras are rendering
+			// IMPORTANT: Enqueue only once in each frame, even if multiple cameras are rendering
 			if(lastQueued == Time.frameCount) return;
 			lastQueued = Time.frameCount;
+
+			// TODO: In the case of non-static proxy volumes, also look for object change
+			if(lightsChanged) lastChange = Time.frameCount;
+			if(lastChange <= lastUpdate) return;
 
 			// TODO: Score is product of object radius * delta-time * viewing distance / center pixel angle
 			// NOTE: If there are multiple cameras, use the minimum d / a.
 			// NOTE: Ideal would be scale in view of player.
 			// NOTE: Prioritizing currently visible objects would also be helpful
+			// TODO: Each rendering camera yields a score. Use the maximum score from the previous frame.
 
 			// TEMP: Add randomly, and order by time
 			var frameDelta = 1 + Time.frameCount - lastUpdate;
 			queueScore = frameDelta;
 			buildQueue.Add(this);
-
-			// TODO: Each frame builds a priority queue for the next frame
-			// and determines whether to update based on its position in the queue
-			// constructed from the last frame. This requires a singleton manager,
-			// which can be included with the PostProcessing and other Agent managers.
-			// Objects that will not render will not be added to the next frame's queue
-			// Object priority is based on frame count since last render, so the longer
-			// the time since the last update, the higher the priority. When a scene is loaded
-			// objects will not have been rendered previously.
-			// NOTE: The queue may be only partially updated in a given frame, but it must be
-			// fully recreated in each frame.
-
-			// TODO: If there have been no changes in dynamic lighting (sun transform), no updates are required.
-			// TODO: Lower levels of detail should have lower update priority. This could also be determined
-			// by assessing distance from the renderer (Camera.current identifies renderer in this call).
-			// TODO: Queue can be budgeted based on proxy resolution.
-
 		}
 	}
 }
