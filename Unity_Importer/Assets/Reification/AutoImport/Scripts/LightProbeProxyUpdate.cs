@@ -16,6 +16,7 @@ namespace Reification {
 	/// </remarks>
 	public class LightProbeProxyUpdate: MonoBehaviour {
 		LightProbeProxyVolume proxy;
+		Renderer renderer;
 
 		public static float targetPeriod = 1f / 5f; // Target frame duration TODO: This should be derived
 		public static float adjustUpdate = 1000; // Proxy count adjustment relative to target frame period
@@ -50,8 +51,8 @@ namespace Reification {
 
 			// Adjust proxy limit
 			// WARNING: In editor, rendered frame rate may be much less than profiled frame rate
+			// NOTE: In editor, scene view will also yield OnWillRender calls.
 			proxyLimit += Mathf.FloorToInt((targetPeriod - Time.deltaTime) * adjustUpdate);
-			//Debug.Log($"Frame period = {Time.deltaTime} -> target delta = {targetPeriod - Time.deltaTime} -> proxy limit = {proxyLimit}");
 
 			// Limit growth of proxy limit
 			if(proxyLimit > priorCount) proxyLimit = priorCount;
@@ -127,10 +128,13 @@ namespace Reification {
 
 		int proxyCount = 0; // Count of probes in proxy volume
 
+		// QUESTION: Is there an analogous update override for RTGI lightmaps? Is it needed?
+
 		private void Start() {
 			proxy = GetComponent<LightProbeProxyVolume>();
-			if(!proxy) {
-				Debug.LogWarning($"LightProbeProxyUpdate requires LightProbeProxyVolume component -> Destroy(this)");
+			renderer = GetComponent<Renderer>();
+			if(!proxy || !renderer) {
+				Debug.LogWarning($"LightProbeProxyUpdate requires LightProbeProxyVolume and Renderer components -> Destroy(this)");
 				Destroy(this);
 				return;
 			}
@@ -141,6 +145,7 @@ namespace Reification {
 			UpdateLights();
 
 			// Ensure that first frame has updates enqueued
+			lastCameraScore = 1f;
 			Enqueue();
 		}
 
@@ -149,11 +154,9 @@ namespace Reification {
 			UpdateQueue(proxyCount);
 		}
 
+		// OnWillRenderObject is not called for culled objects.
+		// OnWillRenderObject is not called for non-rendering LOD objects.
 		private void OnWillRenderObject() {
-			// NOTE: OnWillRenderObject is not called for non-rendering LOD.
-			//Debug.Log($"Will render {gameObject.name}");
-			// QUESTION: Is OnWillRenderObject called for culled objects?
-
 			// IMPORTANT: Because priorCount does not include proxyCount, 
 			// if proxyLimit > 0 then at least one proxy volume will update in every frame.
 			if(0 <= priorCount && priorCount < proxyLimit) {
@@ -165,7 +168,28 @@ namespace Reification {
 			// and do not update unless enqueued
 			priorCount = -1;
 
+			UpdateCameraScore(Camera.current);
 			Enqueue();
+		}
+
+		int lastCameraFrame = -1;
+		float lastCameraScore = 0f;
+		float nextCameraScore = 0f;
+
+		void UpdateCameraScore(Camera camera) {
+			// Camera score is proportionate to object pixels in camera view
+			var focalPixel = camera.pixelHeight / Mathf.Tan(camera.fieldOfView / 2f);
+			var objectRadius = renderer.bounds.extents.sqrMagnitude;
+			var cameraRadius = (renderer.bounds.center - camera.transform.position).sqrMagnitude;
+			var cameraScore = focalPixel * focalPixel * objectRadius / cameraRadius;
+
+			// Queue priority depends on maximum camera score in previous frame
+			if(lastCameraFrame < Time.frameCount) {
+				lastCameraFrame = Time.frameCount;
+				lastCameraScore = nextCameraScore;
+				nextCameraScore = 0f;
+			}
+			if(nextCameraScore < cameraScore) nextCameraScore = cameraScore;
 		}
 
 		private void Enqueue() {
@@ -177,15 +201,9 @@ namespace Reification {
 			if(lightsChanged) lastChange = Time.frameCount;
 			if(lastChange <= lastUpdate) return;
 
-			// TODO: Score is product of object radius * delta-time * viewing distance / center pixel angle
-			// NOTE: If there are multiple cameras, use the minimum d / a.
-			// NOTE: Ideal would be scale in view of player.
-			// NOTE: Prioritizing currently visible objects would also be helpful
-			// TODO: Each rendering camera yields a score. Use the maximum score from the previous frame.
-
 			// TEMP: Add randomly, and order by time
 			var frameDelta = 1 + Time.frameCount - lastUpdate;
-			queueScore = frameDelta;
+			queueScore = frameDelta * lastCameraScore;
 			buildQueue.Add(this);
 		}
 	}
