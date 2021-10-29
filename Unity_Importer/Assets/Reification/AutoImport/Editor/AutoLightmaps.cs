@@ -135,12 +135,183 @@ namespace Reification {
 			return new SerializedObject(lightmapSettingsObject);
 		}
 
+		/// <summary>
+		/// Scene settings for lightmap baking
+		/// </summary>
+		/// <remarks>
+		/// Default member values match Unity scene defaults
+		/// when using Real-Time Global Illumination.
+		/// </remarks>
+		[System.Serializable]
+		public class LightmapSettings {
+			// TODO: Defaults should match Unity scene defaults
+			
+			public int atlasSize = 1024; // texels
+			public int padding = 2; // texels
+			// QUESTION: What determines the optimal padding choice?
+			// MISSING: Directional mode
+			// LightmapEditorSettings.lightmapsMode = LightmapsMode.CombinedDirectional
+			// MISSING: Compress lightmaps
+			// MISSING: Compress reflections (will move to AutoReflectionProbes)
+
+			public float resolutionDirect = 40f; // texels / meter
+			public float resolutionIndirect = 2f; // texels / meter
+
+			// MISSING: Indirect intensity
+			// MISSING: Albedo boost
+
+			public bool ambientOcclusion = false;
+			public float ambientOcclusionDistance = 1f; // meters
+			public float ambientOcclusionDirect = 0f; // exponent (0 = physical)
+			public float ambientOcclusionIndirect = 1f; // exponent (1 = physical)
+
+			// Editor settings Ambient Occlusion direct support:
+			// LightmapEditorSettings.enableAmbientOcclusion;
+			// LightmapEditorSettings.aoMaxDistance;
+			// LightmapEditorSettings.aoExponentIndirect;
+			// LightmapEditorSettings.aoExponentDirect;
+
+			// OBSERVATION: LightmapParameters contains additional AmbientOcclusion settings
+			// NOTE: Lightmapping.extractAmbientOcclusion ignores exponents, and only works in Enlighten directMode bake:
+			// https://docs.unity3d.com/ru/2019.4/ScriptReference/Experimental.Lightmapping-extractAmbientOcclusion.html
+
+			public bool finalGather = false;
+			public bool finalGatherDenoising = true;
+			public int finalGatherRayCount = 256;
+
+			public LightmapParameters lightmapParameters;
+			// TODO: Default should be Unity "Default Medium"
+			// MISSING: Path to LightmapParameters asset
+
+			/// <summary>
+			/// Get serialized settings from active scene
+			/// </summary>
+			public static SerializedObject GetSceneSettings() {
+				var scene = EditorSceneManager.GetActiveScene();
+
+				// https://forum.unity.com/threads/access-lighting-window-properties-in-script.328342/#post-2669345
+				// GetLightmapSettings() is declared as a static accessor in LightmapEditorSettings
+				var getLightmapSettingsMethod = typeof(LightmapEditorSettings).GetMethod("GetLightmapSettings", BindingFlags.Static | BindingFlags.NonPublic);
+				var lightmapSettingsObject = getLightmapSettingsMethod.Invoke(null, null) as Object;
+				return new SerializedObject(lightmapSettingsObject);
+			}
+
+			// NOTE: Some lightmap settings can be applied on a per-object basis
+			// TODO: Generalize this to modify individual object lightmap settings
+
+			public void GetFromScene() {
+				var lightmapSettings = GetSceneSettings();
+
+				atlasSize = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AtlasSize").intValue;
+				padding = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Padding").intValue;
+
+				resolutionDirect = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue;
+				resolutionIndirect = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue;
+
+				ambientOcclusion = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AO").boolValue;
+				ambientOcclusionDistance = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AOMaxDistance").floatValue;
+				ambientOcclusionDirect = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponentDirect").floatValue;
+				ambientOcclusionIndirect = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponent").floatValue;
+
+				finalGather = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGather").boolValue;
+				finalGatherDenoising = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherFiltering").boolValue;
+				finalGatherRayCount = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherRayCount").intValue;
+
+				// QUESTION: Could the parameter fields be directly embedded in the scene instead?
+				// https://forum.unity.com/threads/access-lighting-window-properties-in-script.328342/#post-3320725
+				// m_LightmapEditorSettings with child field m_LightmapParameters is an object reference to a .giparams file
+				lightmapParameters = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_LightmapParameters").objectReferenceValue as LightmapParameters;
+			}
+
+			// FIXME: Use active scene
+			public void ApplyToScene() {
+				var lightmapSettings = GetSceneSettings();
+
+				// Convert scene to use Enlighten
+				LightmapEditorSettings.lightmapper = LightmapEditorSettings.Lightmapper.Enlighten;
+				Lightmapping.realtimeGI = true;
+				Lightmapping.bakedGI = true;
+				LightmapEditorSettings.mixedBakeMode = MixedLightingMode.IndirectOnly;
+
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AtlasSize").intValue = Mathf.NextPowerOfTwo(Mathf.Clamp(1024, atlasSize, 4096));
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Padding").intValue = padding;
+				LightmapEditorSettings.lightmapsMode = LightmapsMode.CombinedDirectional;
+				LightmapEditorSettings.textureCompression = false;
+
+				// TODO: Move this to the reflection probes configuration
+				// NOTE: Additional settings include Resolution, Intensity & Bounces
+				LightmapEditorSettings.reflectionCubemapCompression = UnityEngine.Rendering.ReflectionCubemapCompression.Uncompressed;
+
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue = resolutionDirect;
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue = resolutionIndirect;
+
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AO").boolValue = ambientOcclusion;
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AOMaxDistance").floatValue = ambientOcclusionDistance;
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponentDirect").floatValue = ambientOcclusionDirect;
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponent").floatValue = ambientOcclusionIndirect;
+				//lightmapSettings.FindProperty("m_ExtractAmbientOcclusion").boolValue = true; // Create separate texture for ambient occlusion
+
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGather").boolValue = finalGather;
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherFiltering").boolValue = finalGatherDenoising;
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherRayCount").intValue = finalGatherRayCount;
+
+				// QUESTION: Could the parameter fields be directly embedded in the scene instead?
+				// https://forum.unity.com/threads/access-lighting-window-properties-in-script.328342/#post-3320725
+				// m_LightmapEditorSettings with child field m_LightmapParameters is an object reference to a .giparams file
+				lightmapSettings.FindProperty("m_LightmapEditorSettings.m_LightmapParameters").objectReferenceValue = lightmapParameters;
+
+				lightmapSettings.ApplyModifiedProperties();
+			}
+
+			// TODO: Save serialized settings as asset
+		}
+
+		public static LightmapSettings FastSettings() {
+			return new LightmapSettings() {
+				atlasSize = 1024,
+				padding = 2,
+				resolutionDirect = 10f,
+				resolutionIndirect = 2f,
+				ambientOcclusion = true,
+				ambientOcclusionDistance = 1f,
+				ambientOcclusionDirect = 0f,
+				ambientOcclusionIndirect = 1f,
+				finalGather = true,
+				finalGatherDenoising = true,
+				finalGatherRayCount = 128,
+				lightmapParameters = AssetDatabase.LoadAssetAtPath<LightmapParameters>(fastParametersPath)
+			};
+		}
+
+		public static LightmapSettings GoodSettings() {
+			return new LightmapSettings() {
+				atlasSize = 4096,
+				padding = 2,
+				resolutionDirect = 50f,
+				resolutionIndirect = 10f,
+				ambientOcclusion = true,
+				ambientOcclusionDistance = 1f,
+				ambientOcclusionDirect = 0f,
+				ambientOcclusionIndirect = 1f,
+				finalGather = true,
+				finalGatherDenoising = true,
+				finalGatherRayCount = 512,
+				lightmapParameters = AssetDatabase.LoadAssetAtPath<LightmapParameters>(goodParametersPath)
+			};
+		}
+
+		// TODO: Hard-code these LightmapParameters
+
+		public const string fastParametersPath = "Assets/Reification/AutoImport/Settings/FastLightmaps.giparams";
+
 		public static void FastResolution(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue = 10f; // Direct Resolution (texels / meter)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Resolution").floatValue = 2f; // Indirect Resolution (texels / meter)
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_Padding").intValue = 2;
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AtlasSize").intValue = Mathf.NextPowerOfTwo(Mathf.Clamp(1024, 32, 4096));
 		}
+
+		public const string goodParametersPath = "Assets/Reification/AutoImport/Settings/GoodLightmaps.giparams";
 
 		public static void GoodResolution(SerializedObject lightmapSettings) {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_BakeResolution").floatValue = 50f; // Direct Resolution (texels / meter)
@@ -149,86 +320,24 @@ namespace Reification {
 			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AtlasSize").intValue = Mathf.NextPowerOfTwo(Mathf.Clamp(4096, 32, 4096));
 		}
 
-		// Editor settings Ambient Occlusion direct support:
-		// LightmapEditorSettings.enableAmbientOcclusion = true;
-		// LightmapEditorSettings.aoMaxDistance = 1f;
-		// LightmapEditorSettings.aoExponentIndirect = 1f;
-		// LightmapEditorSettings.aoExponentDirect = 0f;
-
-		// IMPORTANT: LightmapParameters contains additional AmbientOcclusion settings
-		// NOTE: ExtractAmbientOcclusion ignores exponents, and only works in Enlighten directMode bake:
-		// https://docs.unity3d.com/ru/2019.4/ScriptReference/Experimental.Lightmapping-extractAmbientOcclusion.html
-
-		public static void FastAmbientOcclusion(SerializedObject lightmapSettings) {
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AO").boolValue = false; // Ambient Occlusion
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AOMaxDistance").floatValue = 1f; // Max Distance (meters)
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponent").floatValue = 1f; // Indirect Contribution (contrast)
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponentDirect").floatValue = 0f; // Direct Contribution (unphysical)
-			//lightmapSettings.FindProperty("m_ExtractAmbientOcclusion").boolValue = false; // Create separate texture for ambient occlusion
-		}
-
-		public static void GoodAmbientOcclusion(SerializedObject lightmapSettings) {
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AO").boolValue = true; // Ambient Occlusion
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_AOMaxDistance").floatValue = 1f; // Max Distance (meters)
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponent").floatValue = 1f; // Indirect Contribution (contrast)
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_CompAOExponentDirect").floatValue = 0f; // Direct Contribution (unphysical)
-			//lightmapSettings.FindProperty("m_ExtractAmbientOcclusion").boolValue = true; // Create separate texture for ambient occlusion
-		}
-
-		public static void FastFinalGather(SerializedObject lightmapSettings) {
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGather").boolValue = false;
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherFiltering").boolValue = false; // Denoising
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherRayCount").intValue = 128;
-		}
-
-		public static void GoodFinalGather(SerializedObject lightmapSettings) {
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGather").boolValue = true;
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherFiltering").boolValue = true; // Denoising
-			lightmapSettings.FindProperty("m_LightmapEditorSettings.m_FinalGatherRayCount").intValue = 512;
-		}
-
-		public const string fastParametersPath = "Assets/Reification/AutoImport/Settings/FastLightmaps.giparams";
-		public const string goodParametersPath = "Assets/Reification/AutoImport/Settings/GoodLightmaps.giparams";
-
-		// Reference Enlighten RTGI parameters
-		public static void SetLightmapParameters(SerializedObject lightmapSettings, LightmapParameters lightmapParameters) {
-			// QUESTION: Could the parameter fields be directly embedded in the scene instead?
-			// https://forum.unity.com/threads/access-lighting-window-properties-in-script.328342/#post-3320725
-			// m_LightmapEditorSettings with child field m_LightmapParameters is an object reference to a .giparams file
-			SerializedProperty lightmapParametersReference = lightmapSettings.FindProperty("m_LightmapEditorSettings.m_LightmapParameters");
-			lightmapParametersReference.objectReferenceValue = lightmapParameters;
-		}
-
 		// Configure scene for lightmap baking
 		public static void ConfigureLightmaps(Scene scene, LightmapBakeMode lightmapBakeMode = LightmapBakeMode.none) {
 			// TODO: Merge these with the serialized object editing below
 			Lightmapping.giWorkflowMode = Lightmapping.GIWorkflowMode.OnDemand;
-			LightmapEditorSettings.lightmapper = LightmapEditorSettings.Lightmapper.Enlighten;
-			LightmapEditorSettings.lightmapsMode = LightmapsMode.CombinedDirectional;
-			Lightmapping.realtimeGI = true;
-			Lightmapping.bakedGI = true;
-			LightmapEditorSettings.mixedBakeMode = MixedLightingMode.IndirectOnly; // Expect no mixed mode lighting
 
-			if(lightmapBakeMode == LightmapBakeMode.none) return;
-			LightmapParameters lightmapParameters = null;
-			SerializedObject lightmapSettings = GetLightmapSettings(scene);
+			LightmapSettings lightmapSettings = null;
 			switch(lightmapBakeMode) {
 			case LightmapBakeMode.fast:
-				FastResolution(lightmapSettings);
-				FastAmbientOcclusion(lightmapSettings);
-				FastFinalGather(lightmapSettings);
-				lightmapParameters = AssetDatabase.LoadAssetAtPath<LightmapParameters>(fastParametersPath);
+				lightmapSettings = FastSettings();
 				break;
 			case LightmapBakeMode.good:
-				GoodResolution(lightmapSettings);
-				GoodAmbientOcclusion(lightmapSettings);
-				GoodFinalGather(lightmapSettings);
-				lightmapParameters = AssetDatabase.LoadAssetAtPath<LightmapParameters>(goodParametersPath);
+				lightmapSettings = GoodSettings();
 				break;
+			default:
+				Debug.Log($"Unhandled lightmapBakeMode {lightmapBakeMode}");
+				return;
 			}
-			if(lightmapParameters) SetLightmapParameters(lightmapSettings, lightmapParameters);
-			else Debug.LogWarning($"Missing asset: {fastParametersPath}");
-			lightmapSettings.ApplyModifiedProperties();
+			lightmapSettings.ApplyToScene();
 		}
 	}
 }
