@@ -202,7 +202,8 @@ namespace Reification {
 			return probePointList.ToArray();
 		}
 		
-		public static int ProxyResolution(float spaceRatio) => Mathf.ClosestPowerOfTwo(Mathf.FloorToInt(Mathf.Clamp(spaceRatio, 2f, 32f)));
+		// NOTE: Corner placement of proxies is used, so 1 + Floor is used to add fencepost
+		static int ProxyResolution(float spaceRatio) => Mathf.ClosestPowerOfTwo(1 + Mathf.FloorToInt(Mathf.Clamp(spaceRatio, 2f, 32f)));
 
 		/// <summary>
 		/// Configure the light probe proxy volume for lower levels of detail in group
