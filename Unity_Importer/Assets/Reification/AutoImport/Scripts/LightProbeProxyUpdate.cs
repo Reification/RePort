@@ -18,7 +18,7 @@ namespace Reification {
 		LightProbeProxyVolume proxy;
 		Renderer renderer;
 
-		public static float targetPeriod = 1f / 5f; // Target frame duration TODO: This should be derived
+		public static float targetPeriod = 1f / 15f; // Target frame duration TODO: This should be derived
 		public static float adjustUpdate = 1000; // Proxy count adjustment relative to target frame period
 		static int proxyLimit = 0; // Proxy update limit, rounded up by volume
 
@@ -160,13 +160,16 @@ namespace Reification {
 			// IMPORTANT: Because priorCount does not include proxyCount, 
 			// if proxyLimit > 0 then at least one proxy volume will update in every frame.
 			if(0 <= priorCount && priorCount < proxyLimit) {
-				Debug.Log($"Proxy {this.gameObject.name} frame = {Time.frameCount} -> delta = {Time.frameCount - lastUpdate} && priorCount = {priorCount} < proxyLimit = {proxyLimit}");
+				//Debug.Log($"Proxy {this.gameObject.name} frame = {Time.frameCount} -> delta = {Time.frameCount - lastUpdate} && priorCount = {priorCount} < proxyLimit = {proxyLimit}");
 				proxy.Update();
 				lastUpdate = Time.frameCount;
 			}
 			// IMPORTANT: Update only once in each frame, even if multiple cameras are rendering,
 			// and do not update unless enqueued
 			priorCount = -1;
+
+			// IDEA: In the case of an incomplete queue do not update
+			// Instead, offset the priorCount range and skip the update
 
 			UpdateCameraScore(Camera.current);
 			Enqueue();
@@ -177,9 +180,10 @@ namespace Reification {
 		float nextCameraScore = 0f;
 
 		void UpdateCameraScore(Camera camera) {
+			// TODO: Use the LODGroup visible surface area offset to modify camera score
 			// Camera score is proportionate to object pixels in camera view
-			var focalPixel = camera.pixelHeight / Mathf.Tan(camera.fieldOfView / 2f);
-			var objectRadius = renderer.bounds.extents.sqrMagnitude;
+			var focalPixel = camera.pixelHeight / Mathf.Tan(camera.fieldOfView / 2f); // Usually invariant
+			var objectRadius = renderer.bounds.extents.sqrMagnitude; // Usually invariant
 			var cameraRadius = (renderer.bounds.center - camera.transform.position).sqrMagnitude;
 			var cameraScore = focalPixel * focalPixel * objectRadius / cameraRadius;
 
@@ -201,7 +205,7 @@ namespace Reification {
 			if(lightsChanged) lastChange = Time.frameCount;
 			if(lastChange <= lastUpdate) return;
 
-			// TEMP: Add randomly, and order by time
+			// Add prioritized by pixels rendered in camera view and update latency
 			var frameDelta = 1 + Time.frameCount - lastUpdate;
 			queueScore = frameDelta * lastCameraScore;
 			buildQueue.Add(this);
