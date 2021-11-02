@@ -106,7 +106,7 @@ namespace Reification {
 			var lightList = FindObjectsOfType<Light>();
 			foreach(var light in lightList) {
 				// NOTE: Mixed lights only modify direct lighting
-				if(light.lightmapBakeType != LightmapBakeType.Realtime) continue;
+				if(light.bakingOutput.lightmapBakeType != LightmapBakeType.Realtime) continue;
 				lightStates.Add(new LightState(light));
 			}
 		}
