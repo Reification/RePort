@@ -15,7 +15,7 @@ public class RePort_Package {
 
 	public const string packageName = "RePort_for_Unity";
 
-	public static HashSet<string> assetPaths { get; private set; } = new HashSet<string>{
+	public static HashSet<string> assetPaths { get; } = new HashSet<string>{
 			// Import
 			"Assets/Reification/AutoImport/Editor/RePort.cs",
 			"Assets/Reification/AutoImport/Editor/MergeModels.cs",
@@ -59,6 +59,7 @@ public class RePort_Package {
 			"Assets/Reification/Extensions/TransformExtensions.cs",
 			"Assets/Reification/Extensions/PathName/PathName.cs",
 			"Assets/Reification/Extensions/PathName/PathNameExtensions.cs",
+			"Assets/Reification/SafeImport/Editor/SafePackageImport.cs"
 	};
 
 	[MenuItem(menuItemName, priority = menuItemPriority)]
