@@ -4,7 +4,7 @@
 *.shader eol=lf text
 *.cginc eol=lf text
 
-# Generated: https://github.com/github/linguist
+# Unity Data: https://github.com/github/linguist
 *.meta merge=unityyamlmerge eol=lf text linguist-generated
 *.wlt merge=unityyamlmerge eol=lf text linguist-generated
 *.mat merge=unityyamlmerge eol=lf text linguist-generated
@@ -15,6 +15,7 @@
 *.physicMaterial merge=unityyamlmerge eol=lf text linguist-generated
 *.controller merge=unityyamlmerge eol=lf text linguist-generated
 *.lighting merge=unityyamlmerge eol=lf text linguist-generated
+*.giparams merge=unityyamlmerge eol=lf text linguist-generated
 *.asset merge=unityyamlmerge eol=lf text linguist-generated
 
 # Asset Overrides
