@@ -1,6 +1,9 @@
-﻿using System.IO;
+﻿// Copyright 2021 Reification Incorporated
+// Licensed under Apache 2.0. All Rights reserved.
+
+using System;
+using System.IO;
 using System.Diagnostics;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using  UnityEditor;
@@ -15,16 +18,41 @@ namespace Reification {
 	/// 
 	/// This import process extracts all code from a package,
 	/// leaving only assets that are known to be safe.
-	/// However, this process can produce missing references
+	/// WARNING: This process can produce missing references
 	/// in the imported objects.
 	///
 	/// WARNING: This code relies on tar being available via the OS CLI
 	/// </remarks>
+	[InitializeOnLoad]
 	public class SafePackageImport {
-		const string menuItemName = "Reification/Make Safe Package...";
-		const int menuItemPriority = 50;
+		// Batch execution from command line
+		public const string cliFlagName = "-importPackage-safe";
+		
+		// PROBLEM: paths must be absolute, since Unity is not executed as login user
+		// QUESTION: how are paths with spaces passed as arguments?
 
-		[MenuItem("Assets/" + menuItemName, priority = 0)]
+		// QUESTION: If command line arguments are given to interactive editor
+		// will reimporting occur whenever code is recompiled?
+		
+		static SafePackageImport() {
+			// Check for package to import
+			// WARNING: This constructor is called 2 times during Editor launch
+			var arguments = Environment.GetCommandLineArgs();
+			UnityEngine.Debug.Log("SafePackageImport: " + String.Join(" ", arguments));
+			for (var i = 0; i < arguments.Length - 1; ++i) {
+				if (arguments[i] != cliFlagName) continue;
+				var packageFile = arguments[i + 1];
+				// PROBLEM: SafePackageImport() may be executed multiple times during launch (uncomment Debug.Log to verify)
+				// SOLUTION: Register package and process to be invoked by editor
+				importPackageFiles.Add(packageFile);
+				if (importPackageFiles.Count == 1) EditorApplication.update += ProcessPackagesImport;
+			}
+		}
+
+		// Interactive execution from menu
+		const string menuItemName = "Assets/Import Package/Make Safe Package...";
+		const int menuItemPriority = 0;
+		
 		[MenuItem(menuItemName, priority = menuItemPriority)]
 		static private void Execute() {
 			// Select unsafe package file
@@ -40,6 +68,46 @@ namespace Reification {
 			if(safePackageFile == null || safePackageFile.Length == 0) return;
 
 			MakeSafePackage(unsafePackageFile, safePackageFile);
+		}
+		
+		static HashSet<string> importPackageFiles = new HashSet<string>();
+		
+		static void ProcessPackagesImport() {
+			EditorApplication.update -= ProcessPackagesImport;
+			if(importPackageFiles.Count == 0) return;
+
+			// NOTE: Multiple packages can be imported using command line
+			// OPTION: Import in order and break on first failure
+			// OPTION: Continue importing even if some packages fail
+			// IDEA: Look for comma separated values to identify sequential packages.
+			try {
+				foreach(var unsafePackageFile in importPackageFiles) {
+					if (!File.Exists(unsafePackageFile)) {
+						UnityEngine.Debug.LogWarning($"{cliFlagName} {unsafePackageFile} does not exist!");
+						continue;
+					}
+
+					// Make package safe to import
+					UnityEngine.Debug.Log($"Safe Package Import: {unsafePackageFile}");
+					var safePackageFile = unsafePackageFile.Substring(0, unsafePackageFile.LastIndexOf('.')) + ".safe.unitypackage";
+					var removedAssets = MakeSafePackage(unsafePackageFile, safePackageFile);
+					if (removedAssets.Count > 0) {
+						UnityEngine.Debug.Log(
+							$"SafePackageImport {unsafePackageFile} removed assets:\n" +
+							String.Join(",\n- ", removedAssets)
+						);
+					}
+					
+					// Import package
+					AssetDatabase.ImportPackage(safePackageFile, !Application.isBatchMode);
+				}
+			} catch(System.Exception e) {
+				UnityEngine.Debug.LogError($"ProcessPackagesImport failed with error:\n{e.Message}");
+				return;
+			} finally {
+				// IMPORTANT: Unblock future imports even if this import failed
+				importPackageFiles.Clear();
+			}
 		}
 		
 		/// <summary>
@@ -84,8 +152,6 @@ namespace Reification {
 			process.Start();
 			process.WaitForExit();
 		}
-
-		// NOTE: unitypackage directory structure might require no subdirectory
 
 		/// <summary>
 		/// Package directory into a tar+gzip file
