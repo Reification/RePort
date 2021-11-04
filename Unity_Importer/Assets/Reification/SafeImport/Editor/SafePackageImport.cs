@@ -11,11 +11,37 @@ namespace Reification {
 	/// </summary>
 	/// <remarks>
 	///	Imported packages can contain code that will execute immediately,
-	/// making arbitrary package importing fundamentally unsafe.
+	/// making unknown package importing fundamentally unsafe.
+	/// 
+	/// This import process extracts all code from a package,
+	/// leaving only assets that are known to be safe.
+	/// However, this process can produce missing references
+	/// in the imported objects.
 	///
-	/// NOTE: This code relies on tar being available via the OS CLI
+	/// WARNING: This code relies on tar being available via the OS CLI
 	/// </remarks>
 	public class SafePackageImport {
+		const string menuItemName = "Reification/Make Safe Package...";
+		const int menuItemPriority = 50;
+
+		[MenuItem("Assets/" + menuItemName, priority = 0)]
+		[MenuItem(menuItemName, priority = menuItemPriority)]
+		static private void Execute() {
+			// Select unsafe package file
+			var unsafePackageFile = EditorUtility.OpenFilePanel("Load Unsafe Package", "", "unitypackage");
+			if(unsafePackageFile == null || unsafePackageFile.Length == 0) return;
+
+			// Declare safe package file
+			var lastSeparatorIndex = unsafePackageFile.LastIndexOf(Path.DirectorySeparatorChar);
+			var packagePath = unsafePackageFile.Substring(0, lastSeparatorIndex);
+			var packageName = unsafePackageFile.Substring(lastSeparatorIndex + 1);
+			packageName = packageName.Substring(0, packageName.LastIndexOf('.')) + ".safe";
+			var safePackageFile = EditorUtility.SaveFilePanel("Save Safe Package", packagePath, packageName, "unitypackage");
+			if(safePackageFile == null || safePackageFile.Length == 0) return;
+
+			MakeSafePackage(unsafePackageFile, safePackageFile);
+		}
+		
 		/// <summary>
 		/// Extract a tar+gzip file into a directory
 		/// </summary>
@@ -49,14 +75,14 @@ namespace Reification {
 				$"-c 'tar -xf {packageFile} -C {extractPath}'"
 			);
 #endif
-			startInfo.RedirectStandardOutput = true;
+			startInfo.RedirectStandardOutput = false;
 			startInfo.UseShellExecute = false;
 			startInfo.CreateNoWindow = true;
 
 			var process = new System.Diagnostics.Process();
 			process.StartInfo = startInfo;
 			process.Start();
-			UnityEngine.Debug.Log(process.StandardOutput.ReadToEnd());
+			process.WaitForExit();
 		}
 
 		// NOTE: unitypackage directory structure might require no subdirectory
@@ -76,29 +102,29 @@ namespace Reification {
 #if UNITY_EDITOR_WIN
 			var startInfo = new ProcessStartInfo(
 				"cmd", 
-				$"/c 'tar -czf {packagePath} {extractPath}'"
+				$"/c 'tar -czf {packagePath} -C {extractPath} .'"
 			);
 #endif
 #if UNITY_EDITOR_OSX
 			var startInfo = new ProcessStartInfo(
 				"/bin/bash", 
-				$"-c 'tar -czf {packagePath} {extractPath}'"
+				$"-c 'tar -czf {packagePath} -C {extractPath} .'"
 			);
 #endif
 #if UNITY_EDITOR_LINUX
 			var startInfo = new ProcessStartInfo(
 				"/bin/bash",
-				$"-c 'tar -czf {packageFile} {extractPath}'"
+				$"-c 'tar -czf {packageFile} -C {extractPath} .'"
 			);
 #endif
-			startInfo.RedirectStandardOutput = true;
+			startInfo.RedirectStandardOutput = false;
 			startInfo.UseShellExecute = false;
 			startInfo.CreateNoWindow = true;
 
 			var process = new System.Diagnostics.Process();
 			process.StartInfo = startInfo;
 			process.Start();
-			UnityEngine.Debug.Log(process.StandardOutput.ReadToEnd());
+			process.WaitForExit();
 		}
 		
 		public static HashSet<string> safeAssets { get; } = new HashSet<string>{
@@ -113,6 +139,7 @@ namespace Reification {
 			".physicMaterial",
 			".controller",
 			".lighting",
+			".giparams",
 			".asset",
 
 			// Models: https://docs.unity3d.com/Manual/3D-formats.html
@@ -164,7 +191,12 @@ namespace Reification {
 		/// <summary>
 		/// Make a safe version of a package
 		/// </summary>
-		public static void MakeSafePackage(string unsafePackageFile, string safePackageFile = null) {
+		/// <remarks>
+		/// This includes only assets from Assets/ subdirectory,
+		/// so all assets in Packages/ are ignored.
+		/// </remarks>
+		/// <returns>List of removed assets</returns>
+		public static List<string> MakeSafePackage(string unsafePackageFile, string safePackageFile = null) {
 			if(safePackageFile == null) safePackageFile = unsafePackageFile;
 			var extractPath = safePackageFile.Substring(0, safePackageFile.LastIndexOf('.'));
 
@@ -172,9 +204,13 @@ namespace Reification {
 			Extract(unsafePackageFile, extractPath);
 			
 			// Remove unsafe items
+			var removedAssets = new List<string>();
+			// The searchPattern argument matches only file names, not paths
+			// https://docs.microsoft.com/en-us/dotnet/api/system.io.directory.getfiles
+			// NOTE: Files may be modified, so EnumerateFiles is not used.
 			var pathNameFiles = Directory.GetFiles(
-				extractPath, 
-				"*" + Path.PathSeparator + "pathname",
+				extractPath,
+				"pathname",
 				SearchOption.AllDirectories
 			);
 			foreach(var pathNameFile in pathNameFiles) {
@@ -184,8 +220,9 @@ namespace Reification {
 					safeAssets.Contains(pathName.Substring(pathName.LastIndexOf('.')))
 				) continue;
 
-				UnityEngine.Debug.Log($"Removing package asset: {pathName}");
-				var assetPath = pathNameFile.Substring(0, pathNameFile.LastIndexOf(Path.PathSeparator));
+				UnityEngine.Debug.Log($"Removed package asset: {pathName}");
+				removedAssets.Add(pathName);
+				var assetPath = pathNameFile.Substring(0, pathNameFile.LastIndexOf(Path.DirectorySeparatorChar));
 				Directory.Delete(assetPath, true);
 			}
 			
@@ -194,6 +231,8 @@ namespace Reification {
 			
 			// Remove package directory
 			Directory.Delete(extractPath, true);
+
+			return removedAssets;
 		}
 	}
 }
