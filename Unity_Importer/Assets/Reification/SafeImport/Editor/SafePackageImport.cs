@@ -128,13 +128,13 @@ namespace Reification {
 #if UNITY_EDITOR_WIN
 			var startInfo = new ProcessStartInfo(
 				"cmd", 
-				$"/c 'tar -xf {packagePath} -C {extractPath}'"
+				$"/c 'tar -xf {packageFile} -C {extractPath}'"
 			);
 #endif
 #if UNITY_EDITOR_OSX
 			var startInfo = new ProcessStartInfo(
 				"/bin/bash", 
-				$"-c 'tar -xf {packagePath} -C {extractPath}'"
+				$"-c 'tar -xf {packageFile} -C {extractPath}'"
 			);
 #endif
 #if UNITY_EDITOR_LINUX
@@ -168,13 +168,13 @@ namespace Reification {
 #if UNITY_EDITOR_WIN
 			var startInfo = new ProcessStartInfo(
 				"cmd", 
-				$"/c 'tar -czf {packagePath} -C {extractPath} .'"
+				$"/c 'tar -czf {packageFile} -C {extractPath} .'"
 			);
 #endif
 #if UNITY_EDITOR_OSX
 			var startInfo = new ProcessStartInfo(
 				"/bin/bash", 
-				$"-c 'tar -czf {packagePath} -C {extractPath} .'"
+				$"-c 'tar -czf {packageFile} -C {extractPath} .'"
 			);
 #endif
 #if UNITY_EDITOR_LINUX
