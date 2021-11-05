@@ -16,7 +16,7 @@ namespace Reification {
 	/// </remarks>
 	public class LightProbeProxyUpdate: MonoBehaviour {
 		LightProbeProxyVolume proxy;
-		Renderer renderer;
+		new Renderer renderer;
 
 		public static float targetPeriod = 1f / 15f; // Target frame duration TODO: This should be derived
 		public static float adjustUpdate = 1000; // Proxy count adjustment relative to target frame period
