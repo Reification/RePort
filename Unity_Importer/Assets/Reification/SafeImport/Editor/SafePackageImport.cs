@@ -56,7 +56,7 @@ namespace Reification {
 		[MenuItem(menuItemName, priority = menuItemPriority)]
 		static private void Execute() {
 			// Select unsafe package file
-			var unsafePackageFile = EditorUtility.OpenFilePanel("Load Unsafe Package", "", "unitypackage");
+			var unsafePackageFile = EditorUtility.OpenFilePanel("Load Unsafe Package", "", "unitypackage").Replace('/', Path.DirectorySeparatorChar);
 			if(unsafePackageFile == null || unsafePackageFile.Length == 0) return;
 
 			// Declare safe package file
@@ -64,7 +64,7 @@ namespace Reification {
 			var packagePath = unsafePackageFile.Substring(0, lastSeparatorIndex);
 			var packageName = unsafePackageFile.Substring(lastSeparatorIndex + 1);
 			packageName = packageName.Substring(0, packageName.LastIndexOf('.')) + ".safe";
-			var safePackageFile = EditorUtility.SaveFilePanel("Save Safe Package", packagePath, packageName, "unitypackage");
+			var safePackageFile = EditorUtility.SaveFilePanel("Save Safe Package", packagePath, packageName, "unitypackage").Replace('/', Path.DirectorySeparatorChar);
 			if(safePackageFile == null || safePackageFile.Length == 0) return;
 
 			MakeSafePackage(unsafePackageFile, safePackageFile);
