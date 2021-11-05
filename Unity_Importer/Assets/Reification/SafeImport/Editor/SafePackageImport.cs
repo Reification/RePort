@@ -67,7 +67,14 @@ namespace Reification {
 			var safePackageFile = EditorUtility.SaveFilePanel("Save Safe Package", packagePath, packageName, "unitypackage").Replace('/', Path.DirectorySeparatorChar);
 			if(safePackageFile == null || safePackageFile.Length == 0) return;
 
-			MakeSafePackage(unsafePackageFile, safePackageFile);
+			var removedAssets = MakeSafePackage(unsafePackageFile, safePackageFile); 
+			if(removedAssets.Count > 0) {
+				UnityEngine.Debug.Log(
+					$"SafePackageImport {unsafePackageFile} removed assets:\n" +
+					String.Join(",\n- ", removedAssets)
+				);
+			}
+			UnityEngine.Debug.Log($"Created safe package: {safePackageFile}");
 		}
 		
 		static HashSet<string> importPackageFiles = new HashSet<string>();
@@ -127,8 +134,8 @@ namespace Reification {
 			// Extract using tar (available on command line of all platforms)
 #if UNITY_EDITOR_WIN
 			var startInfo = new ProcessStartInfo(
-				"cmd", 
-				$"/c 'tar -xf {packageFile} -C {extractPath}'"
+				"tar", 
+				$"-xf {packageFile} -C {extractPath}"
 			);
 #endif
 #if UNITY_EDITOR_OSX
@@ -162,13 +169,19 @@ namespace Reification {
 			var suffix = packageFile.Substring(packageFile.LastIndexOf('.'));
 			if (extractPath == null) extractPath = packageFile.Substring(0, packageFile.Length - suffix.Length);
 
+			if(!Directory.Exists(extractPath)) {
+				UnityEngine.Debug.LogWarning($"Package directory {extractPath} does not exist");
+				return;
+			}
+
 			// Package using tar (available on command line of all platforms)
 			// NOTE: .unitypackage files use tar + gzip
 			// https://www.howtogeek.com/248780/how-to-compress-and-extract-files-using-the-tar-command-on-linux/
+			// https://docs.microsoft.com/en-us/virtualization/community/team-blog/2017/20171219-tar-and-curl-come-to-windows
 #if UNITY_EDITOR_WIN
 			var startInfo = new ProcessStartInfo(
-				"cmd", 
-				$"/c 'tar -czf {packageFile} -C {extractPath} .'"
+				"tar", 
+				$"-czf {packageFile} -C {extractPath} ."
 			);
 #endif
 #if UNITY_EDITOR_OSX
