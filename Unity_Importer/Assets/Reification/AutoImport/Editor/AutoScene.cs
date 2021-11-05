@@ -87,13 +87,14 @@ namespace Reification {
 
 				// Get bounds of all models in scene
 				var sceneBounds = SceneBounds(scene);
-
+				
 				// NOTE: Modifications of scene prefabs instances will be overrides
 				foreach(var gameObject in scene.GetRootGameObjects()) {
-					// IDEA: In the case of combined scenes, lights from one scene could contribute to others
+					// IDEA: In the case of combined scenes, lights from one scene should have range to contribute to others
 					foreach(var light in gameObject.GetComponentsInChildren<Light>()) SetLightRange(sceneBounds, light);
 					// TODO: Hook for intensity adjustment based on light target
 
+					// FIXME: Charts (and other lighting) should be skipped in the case of remote baking
 					AutoLightCharts.ApplyTo(gameObject);
 					AutoLightProbes.ApplyTo(gameObject);
 					AutoLightSources.ApplyTo(gameObject);

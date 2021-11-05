@@ -142,6 +142,7 @@ namespace Reification {
 
 		public RePort() {
 			// Ensure that import path exists
+			// WARNING: This constructor is called multiple times during launch
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
 		}
 
@@ -179,10 +180,10 @@ namespace Reification {
 			// SOLUTION: Only call configuration processing on second import
 			if(!extractionImport.Contains(assetPath)) {
 				extractionImport.Add(assetPath);
-				EditorApplication.update += ProcessExtractionImport;
+				if(extractionImport.Count == 1) EditorApplication.update += ProcessExtractionImport;
 			} else {
 				configuredImport.Add(assetPath);
-				EditorApplication.update += ProcessConfiguredImport;
+				if(configuredImport.Count == 1) EditorApplication.update += ProcessConfiguredImport;
 			}
 		}
 
@@ -357,7 +358,6 @@ namespace Reification {
 				gameObject.GetComponents<Component>().Length == 1
 			) {
 				EP.Destroy(gameObject);
-				return;
 			}
 		}
 
@@ -389,13 +389,13 @@ namespace Reification {
 		/// <summary>
 		/// Extracts and remaps textures for use by materials
 		/// </summary>
-		/// <returns>True if reimport is requied</returns>
+		/// <returns>True if reimport is required</returns>
 		/// <remarks>
 		/// IMPORTANT: In order for extracted textures to be remapped to materials
 		/// this must be called when AssetDatabase.StartAssetEditing() does not pertain
 		/// so that textures can be synchronously imported for remapping.
 		/// 
-		/// WARNING: In order to update model materials the model must be remiported:
+		/// WARNING: In order to update model materials the model must be reimported:
 		///  AssetDatabase.ImportAsset(modelPath)
 		/// 
 		/// For the implementation of the "Extract Textures" button 
@@ -456,7 +456,6 @@ namespace Reification {
 			var partialModels = new Dictionary<string, List<GameObject>>();
 			var completeModels = new List<GameObject>();
 			var assembledModels = new List<GameObject>();
-			var success = true;
 			try {
 				foreach(var assetPath in configuredImport) {
 					//Debug.Log($"RePort.ProcessImportedModels(): modelPath = {assetPath}");
@@ -487,22 +486,15 @@ namespace Reification {
 				}
 			} catch (System.Exception e) {
 				Debug.LogError($"ProcessImportedModels failed with error:\n{e.Message}");
-				success = false;
+				return;
 			} finally {
 				// IMPORTANT: Unblock future imports even if this import failed
 				configuredImport.Clear();
 			}
-			if(!success) return;
 
 			CombinePartial(partialModels, completeModels);
 			AssembleComplete(completeModels, assembledModels);
-			var configured = ConfigureAssembled(assembledModels);
-
-			// If only one model was imported, open it
-			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
-
-			// End import by printing current version
-			Debug.Log($"RePort v{version}: success");
+			ConfigureAssembled(assembledModels);
 		}
 
 		// Combines partial models (meshes and levels of detail and prefab places) into complete models
@@ -572,6 +564,8 @@ namespace Reification {
 					// NOTE: Modifications will not alter original assets, since copies are now being used
 					var gatherer = new GatherAssets.AssetGatherer(searchPath);
 					gatherer.SwapAssets(model);
+					
+					// TODO: Provide a hook to replace imported models with Unity prefabs (e.g. SpeedTree)
 
 					// Configure the complete model
 					AutoLOD.ApplyTo(model);
@@ -600,19 +594,117 @@ namespace Reification {
 		}
 
 		// Create scene for assembled model and generate lighting
-		static List<string> ConfigureAssembled(List<GameObject> assembledModels) {
-			var configuredScenes = new List<string>();
+		static void ConfigureAssembled(List<GameObject> assembledModels) {
 			foreach(var model in assembledModels) {
 				var modelPath = AssetDatabase.GetAssetPath(model);
 				modelPath = modelPath.Substring(0, modelPath.Length - ".prefab".Length);
 				var scenePath = AutoScene.ApplyTo(modelPath, model);
 				// TODO: Hook to add configurable prefabs...
-				AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
-				// TODO: Hook to bake Reflections, Acoustics...
-				//Debug.Log($"Created scene : {scenePath}");
+				Debug.Log($"Created scene : {scenePath}");
+				// TODO: Run locally if in batch mode, ask user if credentials exist
 				configuredScenes.Add(scenePath);
+				if (configuredScenes.Count == 1) EditorApplication.update += ProcessConfiguredScenes;
 			}
-			return configuredScenes;
+		}
+
+		static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths) {
+			foreach (var assetPath in importedAssets) {
+				// FIXME: This is ONLY needed when importing a package
+				// FIXME: Verify that scene path does not include subdirectory
+				
+				// Only apply RePort importing process to models in importPath
+				if(!assetPath.StartsWith(importPath)) continue;
+				ParseModelName(assetPath, out var _, out var _, out var _, out var _, out var type);
+				if(type == "unity") {
+					// QUESTION: Does this happen when scenes are created? ANSWER: Yes!
+					// QUESTION: Does this happen when packages are imported? ANSWER: Yes!
+					
+					// FIXME: This is invoked happens in the case of ANY saved scene change
+					// which will force scenes to re-bake lighting if cleared and saved.
+					// SOLUTION: This should only apply to imported packages, but that requires
+					// knowing what is being imported!
+					
+					// PROBLEM: Postprocess will be invoked multiple times during lightmap baking
+					// SOLUTION: Ignore until configured scene processing has completed
+					if(!configuredScenes.Contains(assetPath)) {
+						configuredScenes.Add(assetPath);
+						if (configuredScenes.Count == 1) EditorApplication.update += ProcessConfiguredScenes;
+					}
+				}
+			}
+		}
+
+		static bool LightingDataExists(string scenePath) {
+			var lightingPath = scenePath.Substring("Assets/".Length, scenePath.Length - "Assets/".Length - ".unity".Length) + "/LightingData.asset";
+			lightingPath = Path.Combine(Application.dataPath, lightingPath).Replace('/', Path.DirectorySeparatorChar);
+			return File.Exists(lightingPath);
+		}
+		
+		static HashSet<string> configuredScenes = new HashSet<string>();
+
+		static void ProcessConfiguredScenes() {
+			EditorApplication.update -= ProcessConfiguredScenes;
+			if(configuredScenes.Count == 0) return;
+
+			var configured = new List<string>(configuredScenes);
+			
+			// PROBLEM: Processing scenes will generate additional assets
+			// and will fail into an infinite loop if AssetEditing is active.
+			// SOLUTION: Identify scenes to be processed, then invoke ProcessConfiguredScenes
+			// after AssetEditing has ended
+			try {
+				foreach(var scenePath in configuredScenes) {
+					// TODO: Lighting charts should be included here
+					// OPTION: Combine all scenes into unified bake
+					// FIXME: Do not re-bake if imported scene includes lightmaps
+					if(!LightingDataExists(scenePath)) {
+						Debug.Log($"Begin lightmap bake for {scenePath}");
+						AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
+					}
+					// TODO: Hook to bake Reflections, Acoustics...
+				}
+			} catch(Exception e) {
+				Debug.LogError($"ProcessImportedModels failed with error:\n{e.Message}");
+				return;
+			} finally {
+				// IMPORTANT: Unblock future imports even if this import failed
+				configuredScenes.Clear();
+			}
+			
+			// In batch mode, export a package or bundle, then quit
+			if(Application.isBatchMode) {
+				// Export package of configured scenes
+				// TODO: Import process needs to be staged
+				// IDEA: Stages can be identified as package_name.stage.unitypackage
+				// OBSERVATION: importPackage is already a command line option
+				// SOLUTION: In this case, rely on the command line to determine the stage.
+				// In particular, this will support re-baking if requested.
+				// IDEA: Each stage should have a handler registry, analogous to export source handlers.
+				// (0) import (no unroll or backing), enable manual edits
+				// (1) lightmapping charts and baking (use packages)
+				// (2) client player compilation (use bundles)
+				var buildPath = "../../Builds";
+				var packageName = "RePort-Import";
+				EP.CreatePersistentPath(buildPath);
+				// TODO: Use import package name for export
+				var fileName = (Application.dataPath + "/" + buildPath + "/" + packageName + ".unitypackage").Replace('/', Path.DirectorySeparatorChar);
+				AssetDatabase.ExportPackage(configured.ToArray(), fileName, ExportPackageOptions.IncludeDependencies);
+				// NOTE: Specifying IncludeDependencies will include packages that are used in the scene.
+				// This is necessary in order to include supported client assets that are purchased.
+				
+				// TODO: Export bundles for supported build targets (only if indicated by CLI)
+				// NOTE: -exportPackage
+				
+				// ASSUME: Import is complete
+				// PROBLEM: "unity -batchmode -quit" will skip the import process
+				// PROBLEM: If no import is specified then Unity will never quit
+				// PROBLEM: If the import processing fails then Unity will never quit
+				EditorApplication.Exit(0);
+			}
+			
+			// OPTION: Open all scenes
+			// If only one model was imported, open it
+			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
 		}
 	}
 }

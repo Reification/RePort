@@ -1,0 +1,75 @@
+# Scripts
+*.cs diff=csharp eol=lf text
+*.js diff=javatext eol=lf text
+*.shader eol=lf text
+*.cginc eol=lf text
+
+# Unity Data: https://github.com/github/linguist
+*.meta merge=unityyamlmerge eol=lf text linguist-generated
+*.wlt merge=unityyamlmerge eol=lf text linguist-generated
+*.mat merge=unityyamlmerge eol=lf text linguist-generated
+*.anim merge=unityyamlmerge eol=lf text linguist-generated
+*.unity merge=unityyamlmerge eol=lf text linguist-generated
+*.prefab merge=unityyamlmerge eol=lf text linguist-generated
+*.physicsMaterial2D merge=unityyamlmerge eol=lf text linguist-generated
+*.physicMaterial merge=unityyamlmerge eol=lf text linguist-generated
+*.controller merge=unityyamlmerge eol=lf text linguist-generated
+*.lighting merge=unityyamlmerge eol=lf text linguist-generated
+*.giparams merge=unityyamlmerge eol=lf text linguist-generated
+*.asset merge=unityyamlmerge eol=lf text linguist-generated
+
+# Asset Overrides
+TerrainData.asset filter=lfs diff=lfs merge=lfs binary
+LightingData.asset filter=lfs diff=lfs merge=lfs binary
+
+# Plugins: https://docs.unity3d.com/Manual/PluginsForDesktop.html
+*.so filter=lfs diff=lfs merge=lfs binary
+*.dll filter=lfs diff=lfs merge=lfs binary
+*.dylib filter=lfs diff=lfs merge=lfs binary
+*.bundle filter=lfs diff=lfs merge=lfs binary
+
+# Models: https://docs.unity3d.com/Manual/3D-formats.html
+*.fbx filter=lfs diff=lfs merge=lfs binary
+*.dae filter=lfs diff=lfs merge=lfs binary
+*.dxf filter=lfs diff=lfs merge=lfs binary
+*.obj filter=lfs diff=lfs merge=lfs binary
+
+# Videos: https://docs.unity3d.com/Manual/VideoSources-FileCompatibility.html
+*.asf filter=lfs diff=lfs merge=lfs binary
+*.avi filter=lfs diff=lfs merge=lfs binary
+*.dv filter=lfs diff=lfs merge=lfs binary
+*.m4v filter=lfs diff=lfs merge=lfs binary
+*.mov filter=lfs diff=lfs merge=lfs binary
+*.mp4 filter=lfs diff=lfs merge=lfs binary
+*.mpg filter=lfs diff=lfs merge=lfs binary
+*.mpeg filter=lfs diff=lfs merge=lfs binary
+*.ogv filter=lfs diff=lfs merge=lfs binary
+*.vp8 filter=lfs diff=lfs merge=lfs binary
+*.webm filter=lfs diff=lfs merge=lfs binary
+*.wmv filter=lfs diff=lfs merge=lfs binary
+
+# Images: https://docs.unity3d.com/Manual/ImportingTextures.html
+*.bmp filter=lfs diff=lfs merge=lfs binary
+*.exr filter=lfs diff=lfs merge=lfs binary
+*.gif filter=lfs diff=lfs merge=lfs binary
+*.hdr filter=lfs diff=lfs merge=lfs binary
+*.iff filter=lfs diff=lfs merge=lfs binary
+*.jpg filter=lfs diff=lfs merge=lfs binary
+*.pict filter=lfs diff=lfs merge=lfs binary
+*.png filter=lfs diff=lfs merge=lfs binary
+*.psd filter=lfs diff=lfs merge=lfs binary
+*.tga filter=lfs diff=lfs merge=lfs binary
+*.tiff filter=lfs diff=lfs merge=lfs binary
+*.cubemap filter=lfs diff=lfs merge=lfs binary
+
+# Sounds: https://docs.unity3d.com/Manual/AudioFiles.html
+*.mp3 filter=lfs diff=lfs merge=lfs binary
+*.ogg filter=lfs diff=lfs merge=lfs binary
+*.wav filter=lfs diff=lfs merge=lfs binary
+*.aif filter=lfs diff=lfs merge=lfs binary
+*.aiff filter=lfs diff=lfs merge=lfs binary
+*.mod filter=lfs diff=lfs merge=lfs binary
+*.it filter=lfs diff=lfs merge=lfs binary
+*.s3m filter=lfs diff=lfs merge=lfs binary
+*.xm filter=lfs diff=lfs merge=lfs binary
+

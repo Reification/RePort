@@ -78,10 +78,14 @@ namespace Reification {
 		public static void ApplyTo(LightmapBakeMode lightmapBakeMode, params string[] scenePathList) {
 			if(scenePathList.Length == 0) return;
 
-			var sceneSetup = EditorSceneManager.GetSceneManagerSetup();
+			// FIXME: This can get stuck in an infinite loop!
+			// https://issuetracker.unity3d.com/issues/lightmapper-gets-into-an-endless-cycle-of-errors-when-changing-scenes-after-baking-in-previous-scene
+			// https://issuetracker.unity3d.com/issues/light-baking-gets-stuck-in-a-infinite-loop-when-unloading-a-light-baked-scene-if-you-have-another-scene-open
+
+			var sceneManagerSetup = EditorSceneManager.GetSceneManagerSetup();
 			var giWorkflowMode = Lightmapping.giWorkflowMode;
 			try {
-				// Open all of the scenes
+				// Close current scene and open all listed scenes
 				var sceneList = new Scene[scenePathList.Length];
 				for(var s = 0; s < scenePathList.Length; ++s) sceneList[s] = EditorSceneManager.OpenScene(scenePathList[s], s == 0 ? OpenSceneMode.Single : OpenSceneMode.Additive);
 
@@ -102,7 +106,10 @@ namespace Reification {
 				EditorSceneManager.SaveOpenScenes();
 			} finally {
 				Lightmapping.giWorkflowMode = giWorkflowMode;
-				EditorSceneManager.RestoreSceneManagerSetup(sceneSetup);
+				// Validate scene manager setup
+				var hasActiveScene = false;
+				foreach (var sceneSetup in sceneManagerSetup) hasActiveScene |= sceneSetup.isActive;
+				if(hasActiveScene) EditorSceneManager.RestoreSceneManagerSetup(sceneManagerSetup);
 			}
 		}
 
