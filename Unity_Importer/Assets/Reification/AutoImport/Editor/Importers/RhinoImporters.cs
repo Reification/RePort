@@ -22,7 +22,7 @@ namespace Reification {
 	/// - LinearLight : imported as Point Light
 	/// - UnknownLight : imported as Point Light
 	/// </remarks>
-	public static class Rhino {
+	public static class RhinoImporter {
 		// Derive transform information from a placeholder
 		public static void ImportPlaceholder(MeshFilter meshFilter, bool rhinoBasis) {
 			var sharedMesh = meshFilter.sharedMesh;
@@ -127,10 +127,9 @@ namespace Reification {
 		// NOTE: AutoLights will create emissive, non-contributing visible light sources.
 
 		[InitializeOnLoad]
-		public class RhinoImporter: RePort.Importer {
-			static RhinoImporter() {
-				var importer = new RhinoImporter();
-				RePort.RegisterImporter("3dm_7", importer);
+		public class Rhino7Importer: RePort.Importer {
+			static Rhino7Importer() {
+				RePort.RegisterImporter("3dm_7", new Rhino7Importer());
 			}
 
 			public virtual void ConfigureImport(ModelImporter importer, string element) {
@@ -178,9 +177,9 @@ namespace Reification {
 		}
 
 		[InitializeOnLoad]
-		public class Rhino6Importer: RhinoImporter {
+		public class Rhino6Importer: Rhino7Importer {
 			static Rhino6Importer() {
-				RePort.RegisterImporter("3dm_6", new Rhino5Importer());
+				RePort.RegisterImporter("3dm_6", new Rhino6Importer());
 			}
 
 			public override void ImportHierarchy(Transform hierarchy, string element) {
@@ -194,7 +193,7 @@ namespace Reification {
 		}
 
 		[InitializeOnLoad]
-		public class Rhino5Importer: RhinoImporter {
+		public class Rhino5Importer: Rhino7Importer {
 			static Rhino5Importer() {
 				RePort.RegisterImporter("3dm_5", new Rhino5Importer());
 			}
