@@ -140,14 +140,14 @@ namespace Reification {
 #endif
 #if UNITY_EDITOR_OSX
 			var startInfo = new ProcessStartInfo(
-				"/bin/bash", 
-				$"-c 'tar -xf {packageFile} -C {extractPath}'"
+				"tar", 
+				$"-xf {packageFile} -C {extractPath}"
 			);
 #endif
 #if UNITY_EDITOR_LINUX
 			var startInfo = new ProcessStartInfo(
-				"/bin/bash", 
-				$"-c 'tar -xf {packageFile} -C {extractPath}'"
+				"tar", 
+				$"-xf {packageFile} -C {extractPath}"
 			);
 #endif
 			startInfo.RedirectStandardOutput = false;
@@ -186,14 +186,14 @@ namespace Reification {
 #endif
 #if UNITY_EDITOR_OSX
 			var startInfo = new ProcessStartInfo(
-				"/bin/bash", 
-				$"-c 'tar -czf {packageFile} -C {extractPath} .'"
+				"tar", 
+				$"-czf {packageFile} -C {extractPath} ."
 			);
 #endif
 #if UNITY_EDITOR_LINUX
 			var startInfo = new ProcessStartInfo(
-				"/bin/bash",
-				$"-c 'tar -czf {packageFile} -C {extractPath} .'"
+				"tar",
+				$"-czf {packageFile} -C {extractPath} ."
 			);
 #endif
 			startInfo.RedirectStandardOutput = false;
@@ -310,7 +310,7 @@ namespace Reification {
 			
 			// Remove package directory
 			Directory.Delete(extractPath, true);
-
+			
 			return removedAssets;
 		}
 	}
