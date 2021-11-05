@@ -140,34 +140,10 @@ namespace Reification {
 			// QUESTION: How can conflicts be identified when editing importers?
 		}
 
-		/// <summary>
-		/// Command line argument to import a package
-		/// </summary>
-		/// <remarks>
-		/// Command line usage is flag followed by path:
-		///     unity -report-package [path]
-		/// If the package includes Assets/RePort/[scene].unity
-		/// scene preprocessing will be run and the result will be exported
-		/// as a bundle.
-		/// </remarks>
-		public const string importPackageFlag = "-import-package";
-		
 		public RePort() {
 			// Ensure that import path exists
+			// WARNING: This constructor is called multiple times during launch
 			EP.CreatePersistentPath(importPath.Substring("Assets/".Length));
-			
-			// Check for package to import
-			var arguments = Environment.GetCommandLineArgs();
-			Debug.Log(String.Join(" ", arguments));
-			var packagePath = "";
-			for(var i = 0; i < arguments.Length - 1; ++i) {
-				if(arguments[i] != importPackageFlag) continue;
-				packagePath = arguments[i + 1];
-				// PROBLEM: RePort() may be executed multiple times during launch (uncomment CLI log to verify)
-				// SOLUTION: Register package and process to be invoked by editor
-				packagesImport.Add(packagePath);
-				if(packagesImport.Count == 1) EditorApplication.update += ProcessPackagesImport;
-			}
 		}
 
 		static HashSet<string> extractionImport = new HashSet<string>();
@@ -382,7 +358,6 @@ namespace Reification {
 				gameObject.GetComponents<Component>().Length == 1
 			) {
 				EP.Destroy(gameObject);
-				return;
 			}
 		}
 
@@ -639,7 +614,7 @@ namespace Reification {
 				
 				// Only apply RePort importing process to models in importPath
 				if(!assetPath.StartsWith(importPath)) continue;
-				ParseModelName(assetPath, out string path, out string name, out string element, out string exporter, out string type);
+				ParseModelName(assetPath, out var _, out var _, out var _, out var _, out var type);
 				if(type == "unity") {
 					// QUESTION: Does this happen when scenes are created? ANSWER: Yes!
 					// QUESTION: Does this happen when packages are imported? ANSWER: Yes!
@@ -668,7 +643,7 @@ namespace Reification {
 		static HashSet<string> configuredScenes = new HashSet<string>();
 
 		static void ProcessConfiguredScenes() {
-			EditorApplication.update -= ProcessPackagesImport;
+			EditorApplication.update -= ProcessConfiguredScenes;
 			if(configuredScenes.Count == 0) return;
 
 			var configured = new List<string>(configuredScenes);
@@ -688,7 +663,7 @@ namespace Reification {
 					}
 					// TODO: Hook to bake Reflections, Acoustics...
 				}
-			} catch(System.Exception e) {
+			} catch(Exception e) {
 				Debug.LogError($"ProcessImportedModels failed with error:\n{e.Message}");
 				return;
 			} finally {
@@ -700,6 +675,11 @@ namespace Reification {
 			if(Application.isBatchMode) {
 				// Export package of configured scenes
 				// TODO: Import process needs to be staged
+				// IDEA: Stages can be identified as package_name.stage.unitypackage
+				// OBSERVATION: importPackage is already a command line option
+				// SOLUTION: In this case, rely on the command line to determine the stage.
+				// In particular, this will support re-baking if requested.
+				// IDEA: Each stage should have a handler registry, analogous to export source handlers.
 				// (0) import (no unroll or backing), enable manual edits
 				// (1) lightmapping charts and baking (use packages)
 				// (2) client player compilation (use bundles)
@@ -725,41 +705,6 @@ namespace Reification {
 			// OPTION: Open all scenes
 			// If only one model was imported, open it
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
-		}
-
-		static HashSet<string> packagesImport = new HashSet<string>();
-		
-		static void ProcessPackagesImport() {
-			EditorApplication.update -= ProcessPackagesImport;
-			if(packagesImport.Count == 0) return;
-
-			// NOTE: Multiple packages can be imported using command line
-			// OPTION: Import in order and break on first failure
-			// OPTION: Continue importing even if some packages fail
-			// IDEA: Look for comma separated values to identify sequential packages.
-			try {
-				foreach(var packagePath in packagesImport) {
-					if (!File.Exists(packagePath)) {
-						Debug.Log($"WARNING: {importPackageFlag} {packagePath} does not exist!");
-						return;
-					}
-
-					Debug.Log($"Import package: {packagePath}");
-					// FIXME: This is unsafe!
-					// Any scripts that are included in the package will be loaded.
-					// FIXME: The import process will overwrite existing scripts and assets,
-					// which can trigger a reimport when this script is reloaded.
-					// NOTE: If package contacts are reviewed before import, it would be helpful
-					// to create a catalogue of contents. This would enable importing to be structured.
-					AssetDatabase.ImportPackage(packagePath, !Application.isBatchMode);
-				}
-			} catch(System.Exception e) {
-				Debug.LogError($"ProcessPackagesImport failed with error:\n{e.Message}");
-				return;
-			} finally {
-				// IMPORTANT: Unblock future imports even if this import failed
-				packagesImport.Clear();
-			}
 		}
 	}
 }
