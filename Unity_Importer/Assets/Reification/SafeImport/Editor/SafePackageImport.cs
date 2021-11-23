@@ -206,6 +206,8 @@ namespace Reification {
 			process.WaitForExit();
 		}
 		
+		// SECURITY: NOTE: File types listed below are assumed
+		// to be unable to cause arbitrary code execution when imported.
 		public static HashSet<string> safeAssets { get; } = new HashSet<string>{
 			// Unity data
 			".meta",
