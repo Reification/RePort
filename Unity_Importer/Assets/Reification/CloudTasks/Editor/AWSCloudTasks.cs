@@ -10,6 +10,11 @@ using UnityEngine;
 using Unity.Plastic.Newtonsoft.Json;
 using Unity.Plastic.Newtonsoft.Json.Linq;
 
+// NOTE: Scene bundle access is required at runtime.
+// QUESTION: Will an authenticated service be used to fetch bundles?
+// OBSERVATION: Another option would be to provide public access to encrypted data
+// and then share keys through a side-channel.
+// With this option data existence is public, but content is private, so it is not ideal.
 // TEMP
 using UnityEditor;
 
@@ -29,6 +34,7 @@ namespace Reification.CloudTasks {
 		public const string accountFile = "AWSCloudTasks_account.json";
 
 		// SECURITY: WARNING: This is stored in plain text
+		// Regions: https://docs.aws.amazon.com/general/latest/gr/cognito_identity.html
 		[Serializable]
 		private class Account {
 			public string username;
@@ -43,7 +49,7 @@ namespace Reification.CloudTasks {
 
 		private void LoadAccount() {
 			// FIXME: persistentDataPath is project-specific, but this should be universal
-			// NOTE: pDP is base/Company/Project/* so up two levels would work
+			// NOTE: persistentDataPath is base_path/Company/Project/* so up two levels is universal
 			var accountPath = Path.Combine(Application.persistentDataPath, accountFile);
 			if (!File.Exists(accountPath)) {
 				Debug.Log($"AWSCloudTasks missing account file {accountPath}");
@@ -71,6 +77,7 @@ namespace Reification.CloudTasks {
 		private Authentication authentication = null;
 
 		private void GetAuthentication() {
+			// https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html
 			var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
 			var request = new HttpRequestMessage {
 				Method = HttpMethod.Post,
@@ -124,6 +131,7 @@ namespace Reification.CloudTasks {
 				contentJson["IdentityPoolId"] = account.policyId;
 				contentJson["Logins"] = loginsJson;
 
+				// https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetId.html
 				var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
 				var request = new HttpRequestMessage {
 					Method = HttpMethod.Post,
@@ -156,6 +164,7 @@ namespace Reification.CloudTasks {
 				contentJson["IdentityId"] = account.identity;
 				contentJson["Logins"] = loginsJson;
 				
+				// https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetCredentialsForIdentity.html
 				var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
 				var request = new HttpRequestMessage {
 					Method = HttpMethod.Post,
@@ -184,6 +193,7 @@ namespace Reification.CloudTasks {
 		public bool connected { get; private set; } = false;
 
 		public AWSCloudTasks() {
+			// Authentication flow: https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html
 			LoadAccount();
 			if(account == null) return;
 			GetAuthentication();
