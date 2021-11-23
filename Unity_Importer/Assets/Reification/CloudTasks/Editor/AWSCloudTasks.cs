@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Runtime.Serialization.Json;
 using System.Net.Http;
 using System.Collections;
 using System.Collections.Generic;
@@ -34,8 +33,9 @@ namespace Reification.CloudTasks {
 		private class Account {
 			public string username;
 			public string password;
-			public string regionId; // AWS region
-			public string clientId; // Cognito User Pool Client App ID
+			public string identity;
+			public string userpool; // Cognito User Pool
+			public string clientId; // Cognito User Pool Client App Id
 			public string policyId; // Cognito Identity Pool Id
 		}
 
@@ -70,19 +70,12 @@ namespace Reification.CloudTasks {
 
 		private Authentication authentication = null;
 
-		[Serializable]
-		private class AuthenticationResponse {
-			public string AuthenticationResult;
-			public string ChallengeParameters;
-		}
-
 		private void GetAuthentication() {
+			var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
 			var request = new HttpRequestMessage {
 				Method = HttpMethod.Post,
-				RequestUri = new Uri($"https://cognito-idp.{account.regionId}.amazonaws.com"),
-				Headers = { 
-					{ "X-Amz-Target", "AWSCognitoIdentityProviderService.InitiateAuth"}
-				},
+				RequestUri = new Uri($"https://cognito-idp.{authorizationRegion}.amazonaws.com"),
+				Headers = { { "X-Amz-Target", "AWSCognitoIdentityProviderService.InitiateAuth"} },
 				Content = new StringContent(
 					JsonConvert.SerializeObject(new {
 						ClientId = account.clientId,
@@ -96,41 +89,96 @@ namespace Reification.CloudTasks {
 					"application/x-amz-json-1.1" // Content-Type header
 					)
 			};
-			request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-amz-json-1.1");
-			Debug.Log(request.ToString());
+			//Debug.Log(request.ToString());
 			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
-			Debug.Log(response.ToString());
-			
+			//Debug.Log(response.ToString());
 			var responseJson = response.Content.ReadAsStringAsync().Result;
 			var responseObject = JsonConvert.DeserializeObject(responseJson) as JObject;
+			
 			var authenticationJson = responseObject["AuthenticationResult"] as JObject;
 			authentication = authenticationJson.ToObject<Authentication>();
 			if(authentication == null) {
 				Debug.LogWarning($"WSCloudTasks unable to parse response {responseJson}");
 			}
 		}
-		
-		private string identity = null;
 
 		// Identity Pool credentials result on success
 		// NOTE: member names match keys in AWS JSON response
 		[Serializable]
 		private class Credentials {
 			public string AccessKeyId;
-
 			public string SecretKey;
-
 			public string SessionToken;
-
 			public string Expiration;
 		}
 
 		private Credentials credentials = null;
-		
-		DataContractJsonSerializer credentialsSerializer = new DataContractJsonSerializer(typeof(Credentials));
 
 		private void GetCredentials() {
+			if(account.identity == null) {
+				var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
+				var loginsJson = new JObject();
+				loginsJson[$"cognito-idp.{authorizationRegion}.amazonaws.com/{account.userpool}"] = authentication.IdToken;
 			
+				var contentJson = new JObject();
+				contentJson["IdentityPoolId"] = account.policyId;
+				contentJson["Logins"] = loginsJson;
+
+				var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
+				var request = new HttpRequestMessage {
+					Method = HttpMethod.Post,
+					RequestUri = new Uri($"https://cognito-identity.{credentialsRegion}.amazonaws.com"),
+					Headers = {
+						{ "X-Amz-Target", "AWSCognitoIdentityService.GetId" }
+					},
+					Content = new StringContent(
+						contentJson.ToString(),
+						Encoding.UTF8,
+						"application/x-amz-json-1.1" // Content-Type header
+					)
+				};
+				Debug.Log(request.ToString());
+				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+				Debug.Log(response.ToString());
+				var responseJson = response.Content.ReadAsStringAsync().Result;
+				var responseObject = JsonConvert.DeserializeObject(responseJson) as JObject;
+				
+				account.identity = responseObject["IdentityId"].ToString();
+				// TODO: Identity will not change - this could be recorded
+			}
+
+			{
+				var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
+				var loginsJson = new JObject();
+				loginsJson[$"cognito-idp.{authorizationRegion}.amazonaws.com/{account.userpool}"] = authentication.IdToken;
+				
+				var contentJson = new JObject();
+				contentJson["IdentityId"] = account.identity;
+				contentJson["Logins"] = loginsJson;
+				
+				var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
+				var request = new HttpRequestMessage {
+					Method = HttpMethod.Post,
+					RequestUri = new Uri($"https://cognito-identity.{credentialsRegion}.amazonaws.com"),
+					Headers = {
+						{ "X-Amz-Target", "AWSCognitoIdentityService.GetCredentialsForIdentity" }
+					},
+					Content = new StringContent(
+						contentJson.ToString(),
+						Encoding.UTF8,
+						"application/x-amz-json-1.1" // Content-Type header
+					)
+				};
+				request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-amz-json-1.1");
+				Debug.Log(request.ToString());
+				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+				Debug.Log(response.ToString());
+				var responseJson = response.Content.ReadAsStringAsync().Result;
+				var responseObject = JsonConvert.DeserializeObject(responseJson) as JObject;
+				
+				var credentialsJson = responseObject["Credentials"] as JObject;
+				credentials = credentialsJson.ToObject<Credentials>();
+			}
 		}
 
 		public bool connected { get; private set; } = false;
@@ -140,9 +188,9 @@ namespace Reification.CloudTasks {
 			if(account == null) return;
 			GetAuthentication();
 			if(authentication == null) return;
-			Debug.Log("AWSCloudTasks SUCCESS");
 			GetCredentials();
 			if(credentials == null) return;
+			Debug.Log("AWSCloudTasks SUCCESS");
 
 			// TODO: Load bake and build queues
 			// Schedule periodic checking of queues
