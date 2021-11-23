@@ -1,10 +1,15 @@
 ﻿using System;
 using System.IO;
 using System.Runtime.Serialization.Json;
+using System.Net.Http;
 using System.Collections;
 using System.Collections.Generic;
-using Codice.Client.BaseCommands;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using UnityEngine;
+using Unity.Plastic.Newtonsoft.Json;
+using Unity.Plastic.Newtonsoft.Json.Linq;
 
 // TEMP
 using UnityEditor;
@@ -20,27 +25,21 @@ namespace Reification.CloudTasks {
 		}
 		
 		
+		private static readonly HttpClient httpClient = new HttpClient();
+		
 		public const string accountFile = "AWSCloudTasks_account.json";
 
 		// SECURITY: WARNING: This is stored in plain text
 		[Serializable]
 		private class Account {
-			// User Pool username
 			public string username;
-
-			// User Pool password
 			public string password;
-			
-			// User Pool app client Id
-			public string clientId;
-			
-			// Identity Pool Id
-			public string policyId;
+			public string regionId; // AWS region
+			public string clientId; // Cognito User Pool Client App ID
+			public string policyId; // Cognito Identity Pool Id
 		}
 
 		private Account account = null;
-		
-		DataContractJsonSerializer accountSerializer = new DataContractJsonSerializer(typeof(Account));
 
 		private void LoadAccount() {
 			// FIXME: persistentDataPath is project-specific, but this should be universal
@@ -50,8 +49,9 @@ namespace Reification.CloudTasks {
 				Debug.Log($"AWSCloudTasks missing account file {accountPath}");
 				return;
 			}
-			var accountData = File.OpenRead(accountPath);
-			account = accountSerializer.ReadObject(accountData) as Account;
+			var accountData = File.ReadAllText(accountPath);
+			var accountJson = JsonConvert.DeserializeObject(accountData) as JObject;
+			account = accountJson.ToObject<Account>();
 			if (account is null) {
 				Debug.Log($"AWSCloudTasks unable to read account file {accountPath}");
 			}
@@ -62,24 +62,54 @@ namespace Reification.CloudTasks {
 		[Serializable]
 		private class Authentication {
 			public string AccessToken;
-
 			public string IdToken;
-
 			public string RefreshToken;
-
 			public string TokenType;
-
 			public string ExpiresIn;
 		}
 
 		private Authentication authentication = null;
-		
-		DataContractJsonSerializer authenticationSerializer = new DataContractJsonSerializer(typeof(Authentication));
 
-		private void GetAuthentication() {
-			
+		[Serializable]
+		private class AuthenticationResponse {
+			public string AuthenticationResult;
+			public string ChallengeParameters;
 		}
 
+		private void GetAuthentication() {
+			var request = new HttpRequestMessage {
+				Method = HttpMethod.Post,
+				RequestUri = new Uri($"https://cognito-idp.{account.regionId}.amazonaws.com"),
+				Headers = { 
+					{ "X-Amz-Target", "AWSCognitoIdentityProviderService.InitiateAuth"}
+				},
+				Content = new StringContent(
+					JsonConvert.SerializeObject(new {
+						ClientId = account.clientId,
+						AuthFlow = "USER_PASSWORD_AUTH",
+						AuthParameters = new {
+							USERNAME = account.username,
+							PASSWORD = account.password
+						}
+					}),
+					Encoding.UTF8,
+					"application/x-amz-json-1.1" // Content-Type header
+					)
+			};
+			request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-amz-json-1.1");
+			Debug.Log(request.ToString());
+			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+			Debug.Log(response.ToString());
+			
+			var responseJson = response.Content.ReadAsStringAsync().Result;
+			var responseObject = JsonConvert.DeserializeObject(responseJson) as JObject;
+			var authenticationJson = responseObject["AuthenticationResult"] as JObject;
+			authentication = authenticationJson.ToObject<Authentication>();
+			if(authentication == null) {
+				Debug.LogWarning($"WSCloudTasks unable to parse response {responseJson}");
+			}
+		}
+		
 		private string identity = null;
 
 		// Identity Pool credentials result on success
@@ -108,9 +138,9 @@ namespace Reification.CloudTasks {
 		public AWSCloudTasks() {
 			LoadAccount();
 			if(account == null) return;
-			Debug.Log("AWSCloudTasks SUCCESS");
 			GetAuthentication();
 			if(authentication == null) return;
+			Debug.Log("AWSCloudTasks SUCCESS");
 			GetCredentials();
 			if(credentials == null) return;
 
