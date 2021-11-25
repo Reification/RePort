@@ -129,7 +129,7 @@ namespace Reification.CloudTasks {
 			public string AccessKeyId;
 			public string SecretKey;
 			public string SessionToken;
-			public string Expiration;
+			public long Expiration;
 		}
 
 		private Credentials credentials = null;
@@ -203,6 +203,9 @@ namespace Reification.CloudTasks {
 				credentials = credentialsJson.ToObject<Credentials>();
 			}
 		}
+		
+		// TODO: If credentials expire, reauthorize
+		// Property authenticated should check expiration
 
 		public bool authenticated {
 			get => credentials != null;
@@ -231,12 +234,23 @@ namespace Reification.CloudTasks {
 			// Meshes, materials and textures can be elided.
 
 			// TESTING
-			var taskList = ListFiles();
-			if(taskList.Count > 0) {
-				var cloudPath = taskList[0];
-				var fileName = cloudPath.Split('/').Last();
-				var localPath = Path.Combine(Application.persistentDataPath, cacheFolder, fileName);
-				GetFile(cloudPath, localPath);
+			{
+				var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, cacheFolder));
+				if(localList.Length > 0) {
+					var localPath = localList[0];
+					var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
+					var cloudPath = $"{account.identity}/{fileName}";
+					PutFile(localPath, cloudPath);
+				}
+			}
+			{
+				var cloudList = ListFiles(account.identity);
+				if(cloudList.Count > 0) {
+					var cloudPath = cloudList[0];
+					var fileName = cloudPath.Split('/').Last();
+					var localPath = Path.Combine(Application.persistentDataPath, cacheFolder, fileName);
+					GetFile(cloudPath, localPath);
+				}
 			}
 		}
 		
@@ -254,7 +268,7 @@ namespace Reification.CloudTasks {
 		// IMPORTANT: Failure logs need to be discoverable by user.
 
 		// TODO: This should be async
-		private List<string> ListFiles() {
+		private List<string> ListFiles(string cloudPath) {
 			// List bucket contents
 			// NOTE: Policy restricts user to their own folder within a bucket
 			var taskList = new List<string>();
@@ -270,7 +284,7 @@ namespace Reification.CloudTasks {
 				var query = new StringBuilder("?list-type=2");
 				// IMPORTANT: If role policy restricts s3:ListObjects to a user identity directory
 				// the terminating / must be included in the prefix
-				query.Append($"&prefix={account.identity}/");
+				query.Append($"&prefix={cloudPath}/");
 				var requestUri = new UriBuilder("https", account.cloudUrl);
 				if((continuationToken?.Length ?? 0) > 0) {
 					query.Append($"&continuation-token={continuationToken}");
@@ -287,9 +301,9 @@ namespace Reification.CloudTasks {
 						{ "X-Amz-Security-Token", credentials.SessionToken }
 					}
 				};
+				
 				var signer = new AWS4RequestSigner(credentials.AccessKeyId, credentials.SecretKey);
 				request = signer.Sign(request, service, region).Result;
-
 				Debug.Log(request.ToString());
 				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
 				Debug.Log(response.ToString());
@@ -310,6 +324,8 @@ namespace Reification.CloudTasks {
 							if(node["Size"].InnerText != "0") {
 								// Directory objects have size equal to zero
 								taskList.Add(node["Key"].InnerText);
+								// TODO: Also retain the ETag data. In the case of SSE-S3 or unencrypted data this is the MD5 hash
+								// https://docs.aws.amazon.com/AmazonS3/latest/API/API_Object.html#AmazonS3-Type-Object-ETag
 							}
 						}
 						if(node.Name == "NextContinuationToken") {
@@ -325,16 +341,47 @@ namespace Reification.CloudTasks {
 
 		// TODO: This should be async
 		// Upload model package for baking
+		// NOTE: Multi-part upload could be used for large files
+		// https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html
+		// NOTE: In the case of a slow connection this could help with credential timeout
 		public bool PutFile(string localPath, string cloudPath) {
-			// S3 object upload (multi-part?)
-			// Enqueue periodic checking for result
+			if(!File.Exists(localPath)) return false;
+			
+			var domainSplit = account.cloudUrl.Split('.');
+			var bucket = domainSplit[0];
+			var service = domainSplit[1];
+			var region = domainSplit[2];
+			
+			// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+			var requestUri = new UriBuilder("https", account.cloudUrl);
+			requestUri.Path = cloudPath;
+
+			// IMPORTANT: Temporary credentials require a session token
+			// https://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
+			var request = new HttpRequestMessage {
+				Method = HttpMethod.Put,
+				RequestUri = requestUri.Uri,
+				Headers = {
+					{ "X-Amz-Security-Token", credentials.SessionToken }
+				}
+			};
+			
+			var localFile = File.ReadAllBytes(localPath);
+			request.Content = new ByteArrayContent(localFile);
+			// TODO: Compute and compare MD5 hash to verify transmission
+			
+			var signer = new AWS4RequestSigner(credentials.AccessKeyId, credentials.SecretKey);
+			request = signer.Sign(request, service, region).Result;
+			Debug.Log(request.ToString());
+			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+			Debug.Log(response.ToString());
+			if(!response.IsSuccessStatusCode) return false;
+			
 			return false;
 		}
 
 		// TODO: This should be async
 		public bool GetFile(string cloudPath, string localPath) {
-			if(File.Exists(localPath)) return false;
-			
 			var domainSplit = account.cloudUrl.Split('.');
 			var bucket = domainSplit[0];
 			var service = domainSplit[1];
@@ -353,29 +400,30 @@ namespace Reification.CloudTasks {
 					{ "X-Amz-Security-Token", credentials.SessionToken }
 				}
 			};
+			
 			var signer = new AWS4RequestSigner(credentials.AccessKeyId, credentials.SecretKey);
 			request = signer.Sign(request, service, region).Result;
-
 			Debug.Log(request.ToString());
 			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
 			Debug.Log(response.ToString());
-
 			if(!response.IsSuccessStatusCode) return false;
+			
 			var localFile = File.Create(localPath);
 			var remoteFile = response.Content.ReadAsStreamAsync().Result;
 			remoteFile.CopyTo(localFile);
+			// TODO: Compute and compare MD5 hash to verify transmission
 
 			return true;
 		}
 
-		private bool DeleteFile(string cloudPath) {
+		private bool DeleteFiles(List<string> cloudPathList) {
 			return false;
 		}
 
 		public void UploadBake(string bakePath) {
 			// PutFile
 			// This triggers lambda execution which launches an EC2 baking instance
-			
+
 			// OBSERVATION: If a file is repeatedly uploaded there will be a race,
 			// with the earlier version potentially being the final result (and the client being charged for both)
 			// between the EC2 build results.
