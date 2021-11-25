@@ -5,17 +5,24 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
 using UnityEngine;
 using Unity.Plastic.Newtonsoft.Json;
 using Unity.Plastic.Newtonsoft.Json.Linq;
 
 // NOTE: Scene bundle access is required at runtime.
-// QUESTION: Will an authenticated service be used to fetch bundles?
-// OBSERVATION: Another option would be to provide public access to encrypted data
-// and then share keys through a side-channel.
-// With this option data existence is public, but content is private, so it is not ideal.
-// TEMP
+// GOAL: AWS service is not the only way to get private data
+// IDEA: Files can be requested if name is known, but names cannot be listed.
+// File names will have random nonces, making the request effectively secure.
+// NOTE: Accessing a private server requires unique credentials, while downloading
+// requires only a universal file identifier. However, the credentials can be used
+// to request the file identity, which may be changed.
+// NOTE: User avatars will need a similar process, with file identity being shared
+// to all clients connected to a server.
+
+// TEMP: Remove from editor folder after testing to enable runtime use.
 using UnityEditor;
 
 namespace Reification.CloudTasks {
@@ -28,12 +35,11 @@ namespace Reification.CloudTasks {
 			var test = new AWSCloudTasks();
 		}
 		
-		
 		private static readonly HttpClient httpClient = new HttpClient();
 		
 		public const string accountFile = "AWSCloudTasks_account.json";
 
-		// SECURITY: WARNING: This is stored in plain text
+		// SECURITY: WARNING: Account is stored in plain text
 		// Regions: https://docs.aws.amazon.com/general/latest/gr/cognito_identity.html
 		[Serializable]
 		private class Account {
@@ -43,6 +49,7 @@ namespace Reification.CloudTasks {
 			public string userpool; // Cognito User Pool
 			public string clientId; // Cognito User Pool Client App Id
 			public string policyId; // Cognito Identity Pool Id
+			public string cloudUrl; // S3 bucket domain
 		}
 
 		private Account account = null;
@@ -62,6 +69,9 @@ namespace Reification.CloudTasks {
 				Debug.Log($"AWSCloudTasks unable to read account file {accountPath}");
 			}
 		}
+		
+		// FIXME: Authentication tokens are valid for a limited period of time
+		// so reauthentication will be required.
 
 		// User Pool authentication result on success
 		// NOTE: member names match keys in AWS JSON response
@@ -99,13 +109,13 @@ namespace Reification.CloudTasks {
 			//Debug.Log(request.ToString());
 			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
 			//Debug.Log(response.ToString());
-			var responseJson = response.Content.ReadAsStringAsync().Result;
-			var responseObject = JsonConvert.DeserializeObject(responseJson) as JObject;
+			var responseString = response.Content.ReadAsStringAsync().Result;
+			var responseObject = JsonConvert.DeserializeObject(responseString) as JObject;
 			
 			var authenticationJson = responseObject["AuthenticationResult"] as JObject;
 			authentication = authenticationJson.ToObject<Authentication>();
 			if(authentication == null) {
-				Debug.LogWarning($"WSCloudTasks unable to parse response {responseJson}");
+				Debug.LogWarning($"WSCloudTasks unable to parse response {responseString}");
 			}
 		}
 
@@ -148,14 +158,16 @@ namespace Reification.CloudTasks {
 				Debug.Log(request.ToString());
 				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
 				Debug.Log(response.ToString());
-				var responseJson = response.Content.ReadAsStringAsync().Result;
-				var responseObject = JsonConvert.DeserializeObject(responseJson) as JObject;
+				var responseString = response.Content.ReadAsStringAsync().Result;
+				var responseObject = JsonConvert.DeserializeObject(responseString) as JObject;
 				
 				account.identity = responseObject["IdentityId"].ToString();
+				Debug.Log($"AWSCloudTasks identity = {account.identity}");
 				// TODO: Identity will not change - this could be recorded
 			}
 
 			{
+				// FIXME: Regional URLs can be properties of Account instead of repeated here
 				var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
 				var loginsJson = new JObject();
 				loginsJson[$"cognito-idp.{authorizationRegion}.amazonaws.com/{account.userpool}"] = authentication.IdToken;
@@ -178,19 +190,20 @@ namespace Reification.CloudTasks {
 						"application/x-amz-json-1.1" // Content-Type header
 					)
 				};
-				request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-amz-json-1.1");
 				Debug.Log(request.ToString());
 				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
 				Debug.Log(response.ToString());
-				var responseJson = response.Content.ReadAsStringAsync().Result;
-				var responseObject = JsonConvert.DeserializeObject(responseJson) as JObject;
+				var responseString = response.Content.ReadAsStringAsync().Result;
+				var responseObject = JsonConvert.DeserializeObject(responseString) as JObject;
 				
 				var credentialsJson = responseObject["Credentials"] as JObject;
 				credentials = credentialsJson.ToObject<Credentials>();
 			}
 		}
 
-		public bool connected { get; private set; } = false;
+		public bool authenticated {
+			get => authentication != null;
+		}
 
 		public AWSCloudTasks() {
 			// Authentication flow: https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html
@@ -200,22 +213,110 @@ namespace Reification.CloudTasks {
 			if(authentication == null) return;
 			GetCredentials();
 			if(credentials == null) return;
-			Debug.Log("AWSCloudTasks SUCCESS");
+			Debug.Log("AWSCloudTasks authentication SUCCESS");
 
 			// TODO: Load bake and build queues
 			// Schedule periodic checking of queues
-			// IDEA: Queues should be files in the caches
+			// IDEA: Queues should be files in caches
 			// or even retrieved from the cloud service
-			
-			connected = true;
+			// NOTE: Baked scene package only needs to include scene
+			// lightmaps and any other generated assets.
+			// Meshes, materials and textures can be elided.
+
+			var taskList = TaskList();
+		}
+		
+		// https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
+		// https://docs.microsoft.com/en-us/azure/communication-services/tutorials/hmac-header-tutorial
+		// PROBLEM: HttpRequestMessage provides no conversion to canonical form
+		// https://github.com/tsibelman/aws-signer-v4-dot-net
+		// https://www.jordanbrown.dev/2021/02/06/2021/http-to-raw-string-csharp/
+				
+		// S3 Specific authentication instructions
+		// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html
+		
+		// NOTE: Current tasks are tracked on cloud.
+		// The upload and download folders act as queues.
+		// IMPORTANT: Failure logs need to be discoverable by user.
+
+		// TODO: This should be async
+		public List<string> TaskList() {
+			// List bucket contents
+			// NOTE: Policy restricts user to their own folder within a bucket
+			var taskList = new List<string>();
+
+			var domainSplit = account.cloudUrl.Split('.');
+			var bucket = domainSplit[0];
+			var service = domainSplit[1];
+			var region = domainSplit[2];
+
+			string continuationToken = "";
+			while(continuationToken != null) {
+				// https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
+				var query = new StringBuilder("?list-type=2");
+				// IMPORTANT: If role policy restricts s3:ListObjects to a user identity directory
+				// the terminating / must be included in the prefix
+				query.Append($"&prefix={account.identity}/");
+				var requestUri = new UriBuilder("https", account.cloudUrl);
+				if((continuationToken?.Length ?? 0) > 0) {
+					query.Append($"&continuation-token={continuationToken}");
+				}
+				continuationToken = null;
+				requestUri.Query = query.ToString();
+
+				// IMPORTANT: Temporary credentials require a session token
+				// https://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
+				var request = new HttpRequestMessage {
+					Method = HttpMethod.Get,
+					RequestUri = requestUri.Uri,
+					Headers = {
+						{ "X-Amz-Security-Token", credentials.SessionToken }
+					}
+				};
+				var signer = new AWS4RequestSigner(credentials.AccessKeyId, credentials.SecretKey);
+				request = signer.Sign(request, service, region).Result;
+
+				Debug.Log(request.ToString());
+				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+				Debug.Log(response.ToString());
+				var responseString = response.Content.ReadAsStringAsync().Result;
+
+				// Response is only in XML
+				// https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
+				// https://docs.microsoft.com/en-us/dotnet/api/system.xml.xmldocument
+				var xmlReader = new XmlDocument();
+				xmlReader.LoadXml(responseString);
+				var root = xmlReader.DocumentElement;
+				if(root.HasChildNodes) {
+					for(int i = 0; i < root.ChildNodes.Count; i++) {
+						var node = root.ChildNodes[i];
+						Debug.Log(node.OuterXml);
+						if(node.Name == "Contents") {
+							Debug.Log($"ObjectKey: {node["Key"].InnerText}");
+							if(node["Size"].InnerText != "0") {
+								// Directory objects have size equal to zero
+								taskList.Add(node["Key"].InnerText);
+							}
+						}
+						if(node.Name == "NextContinuationToken") {
+							// NextContinuationToken is only included if files remain
+							continuationToken = node.InnerText;
+						}
+					}
+				}
+			}
+
+			return taskList;
 		}
 
+		// TODO: This should be async
 		// Upload model package for baking
 		public void UploadBake() {
 			// S3 object upload (multi-part?)
 			// Enqueue periodic checking for result
 		}
 
+		// TODO: This should be async
 		public void DownloadBake() {
 			// S3 object download (multi-part?)
 			// Check for exists
