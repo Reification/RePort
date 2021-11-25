@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -39,6 +40,8 @@ namespace Reification.CloudTasks {
 		
 		public const string accountFile = "AWSCloudTasks_account.json";
 
+		public const string cacheFolder = "CloudTasks";
+
 		// SECURITY: WARNING: Account is stored in plain text
 		// Regions: https://docs.aws.amazon.com/general/latest/gr/cognito_identity.html
 		[Serializable]
@@ -49,7 +52,7 @@ namespace Reification.CloudTasks {
 			public string userpool; // Cognito User Pool
 			public string clientId; // Cognito User Pool Client App Id
 			public string policyId; // Cognito Identity Pool Id
-			public string cloudUrl; // S3 bucket domain
+			public string cloudUrl; // S3 Bucket Subdomain
 		}
 
 		private Account account = null;
@@ -202,8 +205,12 @@ namespace Reification.CloudTasks {
 		}
 
 		public bool authenticated {
-			get => authentication != null;
+			get => credentials != null;
 		}
+		
+		// TODO: User login files should be imported using drag & drop
+		// The files can be identified by suffix, verified and then copied to the correct location.
+		// NOTE: If credentials already exist conflict should be handled without data loss.
 
 		public AWSCloudTasks() {
 			// Authentication flow: https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html
@@ -223,7 +230,14 @@ namespace Reification.CloudTasks {
 			// lightmaps and any other generated assets.
 			// Meshes, materials and textures can be elided.
 
-			var taskList = TaskList();
+			// TESTING
+			var taskList = ListFiles();
+			if(taskList.Count > 0) {
+				var cloudPath = taskList[0];
+				var fileName = cloudPath.Split('/').Last();
+				var localPath = Path.Combine(Application.persistentDataPath, cacheFolder, fileName);
+				GetFile(cloudPath, localPath);
+			}
 		}
 		
 		// https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
@@ -240,11 +254,11 @@ namespace Reification.CloudTasks {
 		// IMPORTANT: Failure logs need to be discoverable by user.
 
 		// TODO: This should be async
-		public List<string> TaskList() {
+		private List<string> ListFiles() {
 			// List bucket contents
 			// NOTE: Policy restricts user to their own folder within a bucket
 			var taskList = new List<string>();
-
+			
 			var domainSplit = account.cloudUrl.Split('.');
 			var bucket = domainSplit[0];
 			var service = domainSplit[1];
@@ -281,7 +295,7 @@ namespace Reification.CloudTasks {
 				Debug.Log(response.ToString());
 				var responseString = response.Content.ReadAsStringAsync().Result;
 
-				// Response is only in XML
+				// Response is XML
 				// https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
 				// https://docs.microsoft.com/en-us/dotnet/api/system.xml.xmldocument
 				var xmlReader = new XmlDocument();
@@ -311,42 +325,104 @@ namespace Reification.CloudTasks {
 
 		// TODO: This should be async
 		// Upload model package for baking
-		public void UploadBake() {
+		public bool PutFile(string localPath, string cloudPath) {
 			// S3 object upload (multi-part?)
 			// Enqueue periodic checking for result
+			return false;
 		}
 
 		// TODO: This should be async
-		public void DownloadBake() {
-			// S3 object download (multi-part?)
-			// Check for exists
-			// If exists download
-			// After download remove object
-			// Clear queue
-			// Initiate import
+		public bool GetFile(string cloudPath, string localPath) {
+			if(File.Exists(localPath)) return false;
+			
+			var domainSplit = account.cloudUrl.Split('.');
+			var bucket = domainSplit[0];
+			var service = domainSplit[1];
+			var region = domainSplit[2];
+			
+			// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+			var requestUri = new UriBuilder("https", account.cloudUrl);
+			requestUri.Path = cloudPath;
 
-			// NOTE: Downloaded files will persist...
-			// Since import might fail, upload and download
-			// files should be managed with a cache size
-			// and recency prioritization
+			// IMPORTANT: Temporary credentials require a session token
+			// https://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
+			var request = new HttpRequestMessage {
+				Method = HttpMethod.Get,
+				RequestUri = requestUri.Uri,
+				Headers = {
+					{ "X-Amz-Security-Token", credentials.SessionToken }
+				}
+			};
+			var signer = new AWS4RequestSigner(credentials.AccessKeyId, credentials.SecretKey);
+			request = signer.Sign(request, service, region).Result;
+
+			Debug.Log(request.ToString());
+			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+			Debug.Log(response.ToString());
+
+			if(!response.IsSuccessStatusCode) return false;
+			var localFile = File.Create(localPath);
+			var remoteFile = response.Content.ReadAsStreamAsync().Result;
+			remoteFile.CopyTo(localFile);
+
+			return true;
+		}
+
+		private bool DeleteFile(string cloudPath) {
+			return false;
+		}
+
+		public void UploadBake(string bakePath) {
+			// PutFile
+			// This triggers lambda execution which launches an EC2 baking instance
+			
+			// OBSERVATION: If a file is repeatedly uploaded there will be a race,
+			// with the earlier version potentially being the final result (and the client being charged for both)
+			// between the EC2 build results.
+			// OPTION: Allow the race since S3 is atomic.
+			// OPTION: EC2 verifies that version is still the latest (could even terminate early)
+			// OPTION: User does not upload if file will be overwritten, or if so the EC2 instance
+			// is found and terminated.
+		}
+
+		// Download baked scene package
+		public void DownloadBake(string bakePath) {
+			// GetFile, DeleteFile(baked), DeleteFile(unbaked)
 		}
 
 		// Upload model package for building as bundles
-		public void UploadBuild() {
-			// NOTE: Application needs to be able to access these builds
+		public void UploadBuild(string buildPath) {
+			// PutFile
+			// This triggers lambda execution which launches an EC2 build instance
+			
+			// NOTE: In the case of baked assets for licensed systems,
+			// it may be necessary to bake on the server again
+			
+			// This will cause platform-specific bundles to be created
+			// and will then launch an EC2 server instance that downloads the linux bundle.
+			
+			// The server is accessible to just the owner if using a created policy,
+			// or to all previous users if using an updated policy.
+			
+			// OBSERVATION: The same race condition exists here as for UploadBake.
 		}
 
 		// Configure access to builds
-		public void BuildAccess() {
-			// Default state is private in which the model can only be accessed by owner.
-			
+		public void UpdateAccess(string buildPath) {
+			// Access has two parts: Server and Policy
+			// The minimal configuration is a running server
+			// that is accessible only by the owner.
+			// The owner can create access credentials
+			// for other users, and can force the server
+			// to reload credentials.
+
 			// Permanent users can be added
 			// Users can be granted moderator permissions (owner is a moderator)
 			// - Invite users
 			// - Convert users to permanent
 			// - Revoke user access
-			// - Start / stop public access (while moderator is present)
 			// - Reset model
+			// - Start / stop public access (while moderator is present)
 			// Owner has additional privileges
 			// - Promote user to moderator
 			// - View & edit full access list
@@ -355,6 +431,8 @@ namespace Reification.CloudTasks {
 			// with future start and stop times.
 			// NOTE: In the case of timed access it should still be possible
 			// to download the model before but NOT after the access window.
+			// OPTION: Public access without a moderator is not allowed.
+			// OPTION: Public access without a moderator warns all users before connecting.
 
 			// NOTE: Accessing a model is defined by a downloaded bundle
 			// and a server address. The server itself additionally has access
