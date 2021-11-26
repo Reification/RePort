@@ -9,6 +9,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
+using Codice.Client.BaseCommands;
 using UnityEngine;
 using Unity.Plastic.Newtonsoft.Json;
 using Unity.Plastic.Newtonsoft.Json.Linq;
@@ -234,24 +235,29 @@ namespace Reification.CloudTasks {
 			// Meshes, materials and textures can be elided.
 
 			// TESTING
+			bool testSuccess = true;
 			{
 				var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, cacheFolder));
 				if(localList.Length > 0) {
 					var localPath = localList[0];
 					var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
 					var cloudPath = $"{account.identity}/{fileName}";
-					PutFile(localPath, cloudPath);
+					testSuccess &= PutFile(localPath, cloudPath);
 				}
 			}
-			{
+			if(testSuccess) {
 				var cloudList = ListFiles(account.identity);
 				if(cloudList.Count > 0) {
 					var cloudPath = cloudList[0];
 					var fileName = cloudPath.Split('/').Last();
 					var localPath = Path.Combine(Application.persistentDataPath, cacheFolder, fileName);
-					GetFile(cloudPath, localPath);
+					testSuccess &= GetFile(cloudPath, localPath);
+					if(testSuccess) {
+						DeleteFile(cloudPath);
+					}
 				}
 			}
+			Debug.Log("SUCCESS: Put -> Get -> Delete");
 		}
 		
 		// https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
@@ -377,10 +383,11 @@ namespace Reification.CloudTasks {
 			Debug.Log(response.ToString());
 			if(!response.IsSuccessStatusCode) return false;
 			
-			return false;
+			return true;
 		}
 
 		// TODO: This should be async
+		// NOTE: Piecewise downloading via range argument is possible
 		public bool GetFile(string cloudPath, string localPath) {
 			var domainSplit = account.cloudUrl.Split('.');
 			var bucket = domainSplit[0];
@@ -416,8 +423,37 @@ namespace Reification.CloudTasks {
 			return true;
 		}
 
-		private bool DeleteFiles(List<string> cloudPathList) {
-			return false;
+		// TODO: This should be async
+		// NOTE: A single POST request can be used to delete multiple objects
+		// https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+		private bool DeleteFile(string cloudPath) {
+			var domainSplit = account.cloudUrl.Split('.');
+			var bucket = domainSplit[0];
+			var service = domainSplit[1];
+			var region = domainSplit[2];
+			
+			// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+			var requestUri = new UriBuilder("https", account.cloudUrl);
+			requestUri.Path = cloudPath;
+
+			// IMPORTANT: Temporary credentials require a session token
+			// https://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
+			var request = new HttpRequestMessage {
+				Method = HttpMethod.Delete,
+				RequestUri = requestUri.Uri,
+				Headers = {
+					{ "X-Amz-Security-Token", credentials.SessionToken }
+				}
+			};
+			
+			var signer = new AWS4RequestSigner(credentials.AccessKeyId, credentials.SecretKey);
+			request = signer.Sign(request, service, region).Result;
+			Debug.Log(request.ToString());
+			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+			Debug.Log(response.ToString());
+			if(!response.IsSuccessStatusCode) return false;
+			
+			return true;
 		}
 
 		public void UploadBake(string bakePath) {
@@ -444,7 +480,9 @@ namespace Reification.CloudTasks {
 			// This triggers lambda execution which launches an EC2 build instance
 			
 			// NOTE: In the case of baked assets for licensed systems,
-			// it may be necessary to bake on the server again
+			// it may be necessary to bake on the server again.
+			// Since the baked package is available, this seems like the better
+			// option in general.
 			
 			// This will cause platform-specific bundles to be created
 			// and will then launch an EC2 server instance that downloads the linux bundle.
@@ -453,6 +491,10 @@ namespace Reification.CloudTasks {
 			// or to all previous users if using an updated policy.
 			
 			// OBSERVATION: The same race condition exists here as for UploadBake.
+		}
+
+		public void DeleteBuild(string buildPath) {
+			// Delete build files and terminate the associated server
 		}
 
 		// Configure access to builds
