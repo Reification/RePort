@@ -42,9 +42,10 @@ namespace Reification.CloudTasks {
 		public const string accountFile = "AWSCloudTasks_account.json";
 
 		public const string cacheFolder = "CloudTasks";
+		
+		// Regions: https://docs.aws.amazon.com/general/latest/gr/cognito_identity.html
 
 		// SECURITY: WARNING: Account is stored in plain text
-		// Regions: https://docs.aws.amazon.com/general/latest/gr/cognito_identity.html
 		[Serializable]
 		private class Account {
 			public string username;
@@ -225,56 +226,37 @@ namespace Reification.CloudTasks {
 			GetCredentials();
 			if(credentials == null) return;
 			Debug.Log("AWSCloudTasks authentication SUCCESS");
-
-			// TODO: Load bake and build queues
-			// Schedule periodic checking of queues
-			// IDEA: Queues should be files in caches
-			// or even retrieved from the cloud service
-			// NOTE: Baked scene package only needs to include scene
-			// lightmaps and any other generated assets.
-			// Meshes, materials and textures can be elided.
-
+			
 			// TESTING
-			bool testSuccess = true;
 			{
-				var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, cacheFolder));
+				var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, cacheFolder, "Bake"));
 				if(localList.Length > 0) {
 					var localPath = localList[0];
 					var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
 					var cloudPath = $"{account.identity}/{fileName}";
-					testSuccess &= PutFile(localPath, cloudPath);
+					InitiateBake(localPath);
 				}
 			}
-			if(testSuccess) {
-				var cloudList = ListFiles(account.identity);
-				if(cloudList.Count > 0) {
-					var cloudPath = cloudList[0];
-					var fileName = cloudPath.Split('/').Last();
-					var localPath = Path.Combine(Application.persistentDataPath, cacheFolder, fileName);
-					testSuccess &= GetFile(cloudPath, localPath);
-					if(testSuccess) {
-						DeleteFile(cloudPath);
-					}
-				}
+			{
+				RetrieveBake((string localPath) => {
+					Debug.Log($"SUCCESS downloaded baked file: {localPath}");
+					return true;
+				});
 			}
-			Debug.Log("SUCCESS: Put -> Get -> Delete");
 		}
 		
 		// https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
 		// https://docs.microsoft.com/en-us/azure/communication-services/tutorials/hmac-header-tutorial
-		// PROBLEM: HttpRequestMessage provides no conversion to canonical form
+		// PROBLEM: HttpRequestMessage provides no conversion to canonical (sent) form
+		// However, the AWS canonical form is more restrictive than the accepted message form
 		// https://github.com/tsibelman/aws-signer-v4-dot-net
 		// https://www.jordanbrown.dev/2021/02/06/2021/http-to-raw-string-csharp/
 				
 		// S3 Specific authentication instructions
 		// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html
-		
-		// NOTE: Current tasks are tracked on cloud.
-		// The upload and download folders act as queues.
-		// IMPORTANT: Failure logs need to be discoverable by user.
 
 		// TODO: This should be async
-		private List<string> ListFiles(string cloudPath) {
+		private string[] ListFiles(string cloudPath) {
 			// List bucket contents
 			// NOTE: Policy restricts user to their own folder within a bucket
 			var taskList = new List<string>();
@@ -342,7 +324,7 @@ namespace Reification.CloudTasks {
 				}
 			}
 
-			return taskList;
+			return taskList.ToArray();
 		}
 
 		// TODO: This should be async
@@ -455,40 +437,67 @@ namespace Reification.CloudTasks {
 			
 			return true;
 		}
-
-		public void UploadBake(string bakePath) {
-			// PutFile
-			// This triggers lambda execution which launches an EC2 baking instance
-
-			// OBSERVATION: If a file is repeatedly uploaded there will be a race,
-			// with the earlier version potentially being the final result (and the client being charged for both)
-			// between the EC2 build results.
-			// OPTION: Allow the race since S3 is atomic.
-			// OPTION: EC2 verifies that version is still the latest (could even terminate early)
-			// OPTION: User does not upload if file will be overwritten, or if so the EC2 instance
-			// is found and terminated.
+		
+		// QUESTION: How is failure detected handled?
+		// OBSERVATION: There are two use cases:
+		// (1) Diagnostic where artifacts from every stage persist
+		// (2) Efficient where artifacts from every stage are immediately removed
+		// NOTE: Removal could be deferred by fixing a cache size and periodically cleaning
+		
+		// QUESTION: How will projects be kep separate?
+		// IDEA: The simplest approach is to keep bake files
+		// in the project folder. Build bundles will need an application cache.
+		// NOTE: Unity distinguishes projects by company and product, but that can be repeated.
+		
+		public void InitiateBake(string localPath) {
+			var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
+			var cloudPath = $"{account.identity}/Bake/{fileName}";
+			if(!PutFile(localPath, cloudPath)) return;
+			File.Delete(localPath);
+			// NOTE: Upload files persist until removed by processing.
+			// Client does not need to list or remove files in Bake/
+			
+			// IMPORTANT: Client could upload a new file version while old one is processing.
+			// This will overwrite the file version, but could result in an output race, so
+			// processors and products must be found and deleted immediately.
 		}
 
-		// Download baked scene package
-		public void DownloadBake(string bakePath) {
-			// GetFile, DeleteFile(baked), DeleteFile(unbaked)
+		public delegate bool BakeDoneCall(string localPath);
+
+		// Check for completed bake tasks, download and import if done
+		// WARNING: Importing may be slow, or may even wait for user input
+		// so a periodic call must halt until each call completes.
+		public void RetrieveBake(BakeDoneCall bakeDone) {
+			var cloudRoot = $"{account.identity}/Bake-Done/";
+			var cloudList = ListFiles(cloudRoot);
+			foreach(var cloudPath in cloudList) {
+				var fileName = cloudPath.Split('/').Last();
+				var localPath = Path.Combine(Application.persistentDataPath, cacheFolder, "Bake-Done", fileName);
+				if(GetFile(cloudPath, localPath)) continue;
+				DeleteFile(cloudPath);
+				bakeDone(localPath);
+				// NOTE: Files in Bake-Done/ persist until removed by client
+				// IDEA: Files could have a finite lifetime
+				// IDEA: If an account is on multiple machines download might provide easy synchronization
+			}
 		}
+
+		// IMPORTANT: Server ip address may change. However, the bucket and path containing bundles
+		// will not change, so this can be used to discover the current servers and verify bundles hashes.
+		
+		// QUESTION: How can user access be managed? Giving a user, or a group, access to new models by default
+		// would be helpful.
 
 		// Upload model package for building as bundles
 		public void UploadBuild(string buildPath) {
 			// PutFile
-			// This triggers lambda execution which launches an EC2 build instance
+			// This causes platform-specific bundles to be created,
+			// after which a server will be launched.
+			// The required additional data is the access policy for users.
+			// If no policy is provided a policy grant access only to the client will be created.
 			
-			// NOTE: In the case of baked assets for licensed systems,
-			// it may be necessary to bake on the server again.
-			// Since the baked package is available, this seems like the better
-			// option in general.
-			
-			// This will cause platform-specific bundles to be created
-			// and will then launch an EC2 server instance that downloads the linux bundle.
-			
-			// The server is accessible to just the owner if using a created policy,
-			// or to all previous users if using an updated policy.
+			// OBSERVATION: If baked packages persist on the server, there would be no need
+			// to upload or copy the file the previously downloaded file - the existing file could be used.
 			
 			// OBSERVATION: The same race condition exists here as for UploadBake.
 		}
