@@ -44,7 +44,7 @@ namespace Reification.CloudTasks {
 			var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, AWSCloudTasks.cacheFolder, "Bake"));
 			if(localList.Length > 0) {
 				var localPath = localList[0];
-				var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
+				Debug.Log($"Starting bake for {localPath}");
 				cloudTasks.InitiateBake(localPath);
 			}
 		}
@@ -68,7 +68,7 @@ namespace Reification.CloudTasks {
 			return true;
 		}
 
-		public const double doneCheckPeriod = 60.0;
+		public static double doneCheckPeriod = 60.0; // seconds
 		
 		static double lastTimeSinceStartup = 0.0;
 		
@@ -77,11 +77,9 @@ namespace Reification.CloudTasks {
 			if(doneCheckPeriod > nextTimeSinceStartup - lastTimeSinceStartup) return;
 			lastTimeSinceStartup = nextTimeSinceStartup;
 			
-			// TODO: Check for downloads
-			// NOTE: This could be skipped if no download is expected
-			Debug.Log($"Time since startup = {EditorApplication.timeSinceStartup}");
 			cloudTasks.RetrieveBake((string localPath) => {
 				Debug.Log($"SUCCESS downloaded baked file: {localPath}");
+				// TODO: SafePackageImport will be called here
 				return true;
 			});
 		}
@@ -301,6 +299,7 @@ namespace Reification.CloudTasks {
 		// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html
 
 		// TODO: This should be async
+		// IMPORTANT: If listing all client files, path must end in /
 		private string[] ListFiles(string cloudPath) {
 			// List bucket contents
 			// NOTE: Policy restricts user to their own folder within a bucket
@@ -317,7 +316,7 @@ namespace Reification.CloudTasks {
 				var query = new StringBuilder("?list-type=2");
 				// IMPORTANT: If role policy restricts s3:ListObjects to a user identity directory
 				// the terminating / must be included in the prefix
-				query.Append($"&prefix={cloudPath}/");
+				query.Append($"&prefix={cloudPath}");
 				var requestUri = new UriBuilder("https", account.cloudUrl);
 				if((continuationToken?.Length ?? 0) > 0) {
 					query.Append($"&continuation-token={continuationToken}");
@@ -380,6 +379,9 @@ namespace Reification.CloudTasks {
 		public bool PutFile(string localPath, string cloudPath) {
 			if(!File.Exists(localPath)) return false;
 			
+			// OPTIMIZATION: Before uploading look for existence of file and compare MD5 hash
+			// In the case of a baked package the file may exist, so upload can be skipped.
+			
 			var domainSplit = account.cloudUrl.Split('.');
 			var bucket = domainSplit[0];
 			var service = domainSplit[1];
@@ -441,7 +443,8 @@ namespace Reification.CloudTasks {
 			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
 			Debug.Log(response.ToString());
 			if(!response.IsSuccessStatusCode) return false;
-			
+
+			Directory.CreateDirectory(Path.GetDirectoryName(localPath));
 			var localFile = File.Create(localPath);
 			var remoteFile = response.Content.ReadAsStreamAsync().Result;
 			remoteFile.CopyTo(localFile);
@@ -504,13 +507,12 @@ namespace Reification.CloudTasks {
 			var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
 			var cloudPath = $"{account.identity}/Bake/{fileName}";
 			if(!PutFile(localPath, cloudPath)) return;
-			File.Delete(localPath);
-			// NOTE: Upload files persist until removed by processing.
-			// Client does not need to list or remove files in Bake/
+			// NOTE: Upload files persist until removed by client.
+			// This makes it possible to re-run a job in case processing timed-out.
 			
 			// IMPORTANT: Client could upload a new file version while old one is processing.
 			// This will overwrite the file version, but could result in an output race, so
-			// processors and products must be found and deleted immediately.
+			// processors and products must be found and deleted BEFORE a new processing task starts.
 		}
 
 		public delegate bool BakeDoneCall(string localPath);
@@ -519,17 +521,37 @@ namespace Reification.CloudTasks {
 		// WARNING: Importing may be slow, or may even wait for user input
 		// so a periodic call must halt until each call completes.
 		public void RetrieveBake(BakeDoneCall bakeDone) {
-			var cloudRoot = $"{account.identity}/Bake-Done/";
-			var cloudList = ListFiles(cloudRoot);
+			// Check for expected files
+			var localBakeRoot = Path.Combine(Application.persistentDataPath, AWSCloudTasks.cacheFolder, "Bake");
+			var expectedFileNames = new HashSet<string>();
+			foreach(var filePath in Directory.GetFiles(localBakeRoot)) {
+				// TODO: Add report file suffix as well, to retrieve report if error occurred
+				var fileName = filePath.Split(Path.DirectorySeparatorChar).Last();
+				expectedFileNames.Add(fileName);
+			}
+			if(expectedFileNames.Count == 0) return;
+
+			// Check for completed files
+			// QUESTION: If localBakeDoneRoot does not exist, will it be created?
+			var localBakeDoneRoot = Path.Combine(Application.persistentDataPath, cacheFolder, "Bake-Done");
+			var cloudBakeRoot = $"{account.identity}/Bake/";
+			var cloudBakeDoneRoot = $"{account.identity}/Bake-Done/";
+			var cloudList = ListFiles(cloudBakeDoneRoot);
 			foreach(var cloudPath in cloudList) {
 				var fileName = cloudPath.Split('/').Last();
-				var localPath = Path.Combine(Application.persistentDataPath, cacheFolder, "Bake-Done", fileName);
-				if(GetFile(cloudPath, localPath)) continue;
-				DeleteFile(cloudPath);
-				bakeDone(localPath);
-				// NOTE: Files in Bake-Done/ persist until removed by client
-				// IDEA: Files could have a finite lifetime
-				// IDEA: If an account is on multiple machines download might provide easy synchronization
+				if(!expectedFileNames.Contains(fileName)) continue;
+				
+				var localBakeDonePath = Path.Combine(localBakeDoneRoot, fileName);
+				if(!GetFile(cloudPath, localBakeDonePath)) continue;
+				
+				// TODO: If an error report was received instead of a package, handle that case.
+				
+				// Clean up queues
+				File.Delete(Path.Combine(localBakeRoot, fileName)); // Do not download file if found
+				DeleteFile($"{cloudBakeRoot}/{fileName}"); // Will not retry bake
+				DeleteFile(cloudPath); // Will not use package elsewhere
+				bakeDone(localBakeDonePath);
+				// NOTE: Baked package could persist for use in a build without re-uploading
 			}
 		}
 
@@ -541,11 +563,14 @@ namespace Reification.CloudTasks {
 
 		// Upload model package for building as bundles
 		public void UploadBuild(string buildPath) {
-			// PutFile
+			// PutFile (or use existing)
 			// This causes platform-specific bundles to be created,
-			// after which a server will be launched.
+			// after which a server will be launched, and the server address will be recorded.
+			// If an existing build name is used the existing server must either reload or restart with a new address.
+			
 			// The required additional data is the access policy for users.
-			// If no policy is provided a policy grant access only to the client will be created.
+			// If no policy is provided a policy granting access only to the client will be created.
+			// QUESTION: Can file access be controlled using the same user id as server connection?
 			
 			// OBSERVATION: If baked packages persist on the server, there would be no need
 			// to upload or copy the file the previously downloaded file - the existing file could be used.
