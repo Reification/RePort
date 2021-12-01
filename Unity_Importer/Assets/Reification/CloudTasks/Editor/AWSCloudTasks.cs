@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using Codice.Client.BaseCommands;
+using PlasticPipe;
 using UnityEngine;
 using Unity.Plastic.Newtonsoft.Json;
 using Unity.Plastic.Newtonsoft.Json.Linq;
@@ -28,14 +29,70 @@ using Unity.Plastic.Newtonsoft.Json.Linq;
 using UnityEditor;
 
 namespace Reification.CloudTasks {
-	public class AWSCloudTasks {
+	[InitializeOnLoad]
+	public class AWSCloudTasksEditor {
 		const string menuItemName = "Reification/TEST AWS Cloud Tasks";
 		const int menuItemPriority = 100;
 
 		[MenuItem(menuItemName, priority = menuItemPriority)]
 		private static void Execute() {
-			var test = new AWSCloudTasks();
+			if(
+				cloudTasks == null && 
+				!Enable()
+			) return;
+			
+			var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, AWSCloudTasks.cacheFolder, "Bake"));
+			if(localList.Length > 0) {
+				var localPath = localList[0];
+				var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
+				cloudTasks.InitiateBake(localPath);
+			}
 		}
+		
+		static AWSCloudTasksEditor() {
+			Enable();
+		}
+
+		private static AWSCloudTasks cloudTasks;
+
+		// Enroll to periodically check for downloads
+		public static bool Enable() {
+			// Authenticate
+			cloudTasks = new AWSCloudTasks();
+			if(!cloudTasks.authenticated) {
+				cloudTasks = null;
+				return false;
+			}
+			
+			EditorApplication.update += Update;
+			return true;
+		}
+
+		public const double doneCheckPeriod = 60.0;
+		
+		static double lastTimeSinceStartup = 0.0;
+		
+		static void Update() {
+			var nextTimeSinceStartup = EditorApplication.timeSinceStartup;
+			if(doneCheckPeriod > nextTimeSinceStartup - lastTimeSinceStartup) return;
+			lastTimeSinceStartup = nextTimeSinceStartup;
+			
+			// TODO: Check for downloads
+			// NOTE: This could be skipped if no download is expected
+			Debug.Log($"Time since startup = {EditorApplication.timeSinceStartup}");
+			cloudTasks.RetrieveBake((string localPath) => {
+				Debug.Log($"SUCCESS downloaded baked file: {localPath}");
+				return true;
+			});
+		}
+
+		public static void Disable() {
+			cloudTasks = null;
+			EditorApplication.update += Update;
+		}
+	}
+	
+	public class AWSCloudTasks {
 		
 		private static readonly HttpClient httpClient = new HttpClient();
 		
@@ -63,20 +120,25 @@ namespace Reification.CloudTasks {
 			// FIXME: persistentDataPath is project-specific, but this should be universal
 			// NOTE: persistentDataPath is base_path/Company/Project/* so up two levels is universal
 			var accountPath = Path.Combine(Application.persistentDataPath, accountFile);
-			if (!File.Exists(accountPath)) {
+			if(!File.Exists(accountPath)) {
 				Debug.Log($"AWSCloudTasks missing account file {accountPath}");
 				return;
 			}
+
 			var accountData = File.ReadAllText(accountPath);
 			var accountJson = JsonConvert.DeserializeObject(accountData) as JObject;
 			account = accountJson.ToObject<Account>();
-			if (account is null) {
+			if(account is null) {
 				Debug.Log($"AWSCloudTasks unable to read account file {accountPath}");
 			}
 		}
+
+		// QUESTION: Can a user have multiple concurrent sessions?
+		// PROBLEM: If not, multiple machines sharing an account may repeatedly preempt each other.
 		
-		// FIXME: Authentication tokens are valid for a limited period of time
-		// so reauthentication will be required.
+		// TODO: Reauthentication using token.
+		// TODO: Reauthentication using login.
+		// TODO: Password recovery using email.
 
 		// User Pool authentication result on success
 		// NOTE: member names match keys in AWS JSON response
@@ -226,23 +288,6 @@ namespace Reification.CloudTasks {
 			GetCredentials();
 			if(credentials == null) return;
 			Debug.Log("AWSCloudTasks authentication SUCCESS");
-			
-			// TESTING
-			{
-				var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, cacheFolder, "Bake"));
-				if(localList.Length > 0) {
-					var localPath = localList[0];
-					var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
-					var cloudPath = $"{account.identity}/{fileName}";
-					InitiateBake(localPath);
-				}
-			}
-			{
-				RetrieveBake((string localPath) => {
-					Debug.Log($"SUCCESS downloaded baked file: {localPath}");
-					return true;
-				});
-			}
 		}
 		
 		// https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
@@ -444,11 +489,17 @@ namespace Reification.CloudTasks {
 		// (2) Efficient where artifacts from every stage are immediately removed
 		// NOTE: Removal could be deferred by fixing a cache size and periodically cleaning
 		
-		// QUESTION: How will projects be kep separate?
+		// QUESTION: How will projects be kept separate?
 		// IDEA: The simplest approach is to keep bake files
 		// in the project folder. Build bundles will need an application cache.
 		// NOTE: Unity distinguishes projects by company and product, but that can be repeated.
 		
+		// PROBLEM: If a user is working on multiple projects on different machines
+		// they might have a single account (single email) used by both.
+		// In the present configuration the machine that receives the build is a race...
+		// IDEA: Client only looks for items in outbox, and cleans up everything when the build succeeds.
+		// NOTE: This also allows for the option of a bake/build failure report.
+
 		public void InitiateBake(string localPath) {
 			var fileName = localPath.Split(Path.DirectorySeparatorChar).Last();
 			var cloudPath = $"{account.identity}/Bake/{fileName}";
