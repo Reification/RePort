@@ -9,24 +9,10 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
-using Codice.Client.BaseCommands;
-using PlasticPipe;
 using UnityEngine;
-using Unity.Plastic.Newtonsoft.Json;
-using Unity.Plastic.Newtonsoft.Json.Linq;
 
-// NOTE: Scene bundle access is required at runtime.
-// GOAL: AWS service is not the only way to get private data
-// IDEA: Files can be requested if name is known, but names cannot be listed.
-// File names will have random nonces, making the request effectively secure.
-// NOTE: Accessing a private server requires unique credentials, while downloading
-// requires only a universal file identifier. However, the credentials can be used
-// to request the file identity, which may be changed.
-// NOTE: User avatars will need a similar process, with file identity being shared
-// to all clients connected to a server.
-
-// TEMP: Remove from editor folder after testing to enable runtime use.
 using UnityEditor;
+using UnityEngine.Serialization;
 
 namespace Reification.CloudTasks.AWS {
 	public class AWSCloudTasks {
@@ -63,8 +49,7 @@ namespace Reification.CloudTasks.AWS {
 			}
 
 			var accountData = File.ReadAllText(accountPath);
-			var accountJson = JsonConvert.DeserializeObject(accountData) as JObject;
-			account = accountJson.ToObject<Account>();
+			account = JsonUtility.FromJson<Account>(accountData);
 			if(account is null) {
 				Debug.Log($"AWSCloudTasks unable to read account file {accountPath}");
 			}
@@ -72,15 +57,11 @@ namespace Reification.CloudTasks.AWS {
 
 		// QUESTION: Can a user have multiple concurrent sessions?
 		// PROBLEM: If not, multiple machines sharing an account may repeatedly preempt each other.
-		
-		// TODO: Reauthentication using token.
-		// TODO: Reauthentication using login.
-		// TODO: Password recovery using email.
 
 		// User Pool authentication result on success
 		// NOTE: member names match keys in AWS JSON response
 		[Serializable]
-		private class Authentication {
+		private class AuthenticationClass {
 			public string AccessToken;
 			public string IdToken;
 			public string RefreshToken;
@@ -88,133 +69,199 @@ namespace Reification.CloudTasks.AWS {
 			public string ExpiresIn;
 		}
 
-		private Authentication authentication = null;
+		private AuthenticationClass authentication = null;
+
+		[Serializable]
+		private class AuthenticationRequest {
+			public string ClientId = null;
+			public string AuthFlow = null;
+
+			// NOTE: Request can include unused null parameters
+			[Serializable]
+			public class AuthParametersClass {
+				// USER_PASSWORD_AUTH
+				public string USERNAME = null;
+				public string PASSWORD = null;
+				
+				// REFRESH_TOKEN_AUTH
+				public string REFRESH_TOKEN = null;
+			};
+			public AuthParametersClass AuthParameters = null;
+		}
+
+		// NOTE: Response will default-construct missing members
+		[Serializable]
+		private class AuthenticationResponse {
+			// AUTHENTICATED
+			public AuthenticationClass AuthenticationResult = null;
+			
+			// CHALLENGE
+			public string ChallengeName = null;
+			[Serializable]
+			public class ChallengeParametersClass {
+				// QUESTION: What parameter members go here?
+			};
+			public ChallengeParametersClass ChallengeParameters = null;
+			public string Session = null;
+		}
 
 		private void GetAuthentication() {
 			// https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html
+			var authRequest = new AuthenticationRequest {
+				ClientId = account.clientId,
+				AuthFlow = "USER_PASSWORD_AUTH",
+				AuthParameters = new AuthenticationRequest.AuthParametersClass {
+					USERNAME = account.username,
+					PASSWORD = account.password
+				}
+			};
 			var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
 			var request = new HttpRequestMessage {
 				Method = HttpMethod.Post,
 				RequestUri = new Uri($"https://cognito-idp.{authorizationRegion}.amazonaws.com"),
 				Headers = { { "X-Amz-Target", "AWSCognitoIdentityProviderService.InitiateAuth"} },
 				Content = new StringContent(
-					JsonConvert.SerializeObject(new {
-						ClientId = account.clientId,
-						AuthFlow = "USER_PASSWORD_AUTH",
-						AuthParameters = new {
-							USERNAME = account.username,
-							PASSWORD = account.password
-						}
-					}),
+					JsonUtility.ToJson(authRequest),
 					Encoding.UTF8,
 					"application/x-amz-json-1.1" // Content-Type header
 					)
 			};
-			//Debug.Log(request.ToString());
-			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
-			//Debug.Log(response.ToString());
-			var responseString = response.Content.ReadAsStringAsync().Result;
-			var responseObject = JsonConvert.DeserializeObject(responseString) as JObject;
-			
-			var authenticationJson = responseObject["AuthenticationResult"] as JObject;
-			authentication = authenticationJson.ToObject<Authentication>();
-			if(authentication == null) {
-				Debug.LogWarning($"WSCloudTasks unable to parse response {responseString}");
+			var response = httpClient.SendAsync(request).Result;
+			if(!response.IsSuccessStatusCode) {
+				Debug.Log($"Request failed with status code = {response.StatusCode}");
+				return;
 			}
+			var responseString = response.Content.ReadAsStringAsync().Result;
+			var authenticationResponse = JsonUtility.FromJson<AuthenticationResponse>(responseString);
+
+			if(authenticationResponse.ChallengeName != null) {
+				Debug.LogWarning($"Authentication unhandled challenge response: {authenticationResponse.ChallengeName}");
+				// TODO: Handle challenge requests (maintain state so that user input can occur)
+				// Is there a challenge response to request a token refresh? Just check for timeout?
+				// NEW_PASSWORD_REQUIRED
+				// MFA_SETUP (Maybe also works for TOTP_MFA)
+				// TOTP_MFA / SOFTWARE_TOKEN_MFA
+				// https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-mfa-totp.html
+				return;
+			}
+
+			// NOTE: AuthenticationResult will be non-null, even if key is missing
+			authentication = authenticationResponse.AuthenticationResult;
+			if(authentication == null || authentication.IdToken == null) {
+				Debug.LogWarning($"Authentication cannot deserialize response:\n{responseString}");
+				authentication = null;
+				return;
+			}
+		}
+
+		[Serializable]
+		private class IdentityResponse {
+			public string IdentityId = null;
+		}
+
+		private void GetIdentity() {
+			// https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetId.html
+			// NOTE: Identity request JSON has a generated key, so member serialization will not work
+			var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
+			var contentString = "{"
+			+   $"\"IdentityPoolId\":\"{account.policyId}\","
+			+   "\"Logins\":{"
+			+     $"\"cognito-idp.{authorizationRegion}.amazonaws.com/{account.userpool}\":\"{authentication.IdToken}\""
+			+   "}"
+			+ "}";
+			var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
+			var request = new HttpRequestMessage {
+				Method = HttpMethod.Post,
+				RequestUri = new Uri($"https://cognito-identity.{credentialsRegion}.amazonaws.com"),
+				Headers = {
+					{ "X-Amz-Target", "AWSCognitoIdentityService.GetId" }
+				},
+				Content = new StringContent(
+					contentString,
+					Encoding.UTF8,
+					"application/x-amz-json-1.1" // Content-Type header
+				)
+			};
+			var response = httpClient.SendAsync(request).Result;
+			if(!response.IsSuccessStatusCode) {
+				Debug.Log($"Request failed with status code = {response.StatusCode}");
+				return;
+			}
+			var responseString = response.Content.ReadAsStringAsync().Result;
+			var identityResponse = JsonUtility.FromJson<IdentityResponse>(responseString);
+			
+			account.identity = identityResponse.IdentityId;
+			if(string.IsNullOrEmpty(account.identity)) {
+				Debug.LogWarning($"GetIdentity cannot deserialize response:\n{responseString}");
+				authentication = null;
+				return;
+			}
+			// TODO: Identity will not change - account update could be recorded
 		}
 
 		// Identity Pool credentials result on success
 		// NOTE: member names match keys in AWS JSON response
 		[Serializable]
-		private class Credentials {
+		private class CredentialsClass {
 			public string AccessKeyId;
 			public string SecretKey;
 			public string SessionToken;
 			public long Expiration;
 		}
 
-		private Credentials credentials = null;
+		private CredentialsClass credentials = null;
+
+		[Serializable]
+		private class CredentialsResponse {
+			public CredentialsClass Credentials;
+			public string IdentityId;
+		}
 
 		private void GetCredentials() {
-			if(account.identity == null) {
-				var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
-				var loginsJson = new JObject();
-				loginsJson[$"cognito-idp.{authorizationRegion}.amazonaws.com/{account.userpool}"] = authentication.IdToken;
-			
-				var contentJson = new JObject();
-				contentJson["IdentityPoolId"] = account.policyId;
-				contentJson["Logins"] = loginsJson;
-
-				// https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetId.html
-				var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
-				var request = new HttpRequestMessage {
-					Method = HttpMethod.Post,
-					RequestUri = new Uri($"https://cognito-identity.{credentialsRegion}.amazonaws.com"),
-					Headers = {
-						{ "X-Amz-Target", "AWSCognitoIdentityService.GetId" }
-					},
-					Content = new StringContent(
-						contentJson.ToString(),
-						Encoding.UTF8,
-						"application/x-amz-json-1.1" // Content-Type header
-					)
-				};
-				Debug.Log(request.ToString());
-				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
-				Debug.Log(response.ToString());
-				var responseString = response.Content.ReadAsStringAsync().Result;
-				var responseObject = JsonConvert.DeserializeObject(responseString) as JObject;
-				
-				account.identity = responseObject["IdentityId"].ToString();
-				Debug.Log($"AWSCloudTasks identity = {account.identity}");
-				// TODO: Identity will not change - this could be recorded
+			// https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetCredentialsForIdentity.html
+			// NOTE: Identity request JSON has a generated key, so member serialization will not work
+			var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
+			var contentString = "{"
+			+   $"\"IdentityId\":\"{account.identity}\","
+			+   "\"Logins\":{"
+			+     $"\"cognito-idp.{authorizationRegion}.amazonaws.com/{account.userpool}\":\"{authentication.IdToken}\""
+			+   "}"
+			+ "}";
+			var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
+			var request = new HttpRequestMessage {
+				Method = HttpMethod.Post,
+				RequestUri = new Uri($"https://cognito-identity.{credentialsRegion}.amazonaws.com"),
+				Headers = {
+					{ "X-Amz-Target", "AWSCognitoIdentityService.GetCredentialsForIdentity" }
+				},
+				Content = new StringContent(
+					contentString,
+					Encoding.UTF8,
+					"application/x-amz-json-1.1" // Content-Type header
+				)
+			};
+			var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
+			if(!response.IsSuccessStatusCode) {
+				Debug.Log($"Request failed with status code = {response.StatusCode}");
+				return;
 			}
-
-			{
-				// FIXME: Regional URLs can be properties of Account instead of repeated here
-				var authorizationRegion = account.userpool.Substring(0, account.userpool.IndexOf('_'));
-				var loginsJson = new JObject();
-				loginsJson[$"cognito-idp.{authorizationRegion}.amazonaws.com/{account.userpool}"] = authentication.IdToken;
-				
-				var contentJson = new JObject();
-				contentJson["IdentityId"] = account.identity;
-				contentJson["Logins"] = loginsJson;
-				
-				// https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetCredentialsForIdentity.html
-				var credentialsRegion = account.policyId.Substring(0, account.policyId.IndexOf(':'));
-				var request = new HttpRequestMessage {
-					Method = HttpMethod.Post,
-					RequestUri = new Uri($"https://cognito-identity.{credentialsRegion}.amazonaws.com"),
-					Headers = {
-						{ "X-Amz-Target", "AWSCognitoIdentityService.GetCredentialsForIdentity" }
-					},
-					Content = new StringContent(
-						contentJson.ToString(),
-						Encoding.UTF8,
-						"application/x-amz-json-1.1" // Content-Type header
-					)
-				};
-				Debug.Log(request.ToString());
-				var response = httpClient.SendAsync(request).Result as HttpResponseMessage;
-				Debug.Log(response.ToString());
-				var responseString = response.Content.ReadAsStringAsync().Result;
-				var responseObject = JsonConvert.DeserializeObject(responseString) as JObject;
-				
-				var credentialsJson = responseObject["Credentials"] as JObject;
-				credentials = credentialsJson.ToObject<Credentials>();
+			var responseString = response.Content.ReadAsStringAsync().Result;
+			var credentialsResponse = JsonUtility.FromJson<CredentialsResponse>(responseString);
+			credentials = credentialsResponse.Credentials;
+			
+			if(credentials == null || credentials.SecretKey == null) {
+				Debug.LogWarning($"GetCredentials cannot deserialize response:\n{responseString}");
+				credentials = null;
+				return;
 			}
 		}
 		
 		// TODO: If credentials expire, reauthorize
-		// Property authenticated should check expiration
+		// Property authenticated should check expiration and reauthenticate if necessary
 
 		public bool authenticated {
 			get => credentials != null;
 		}
-		
-		// TODO: User login files should be imported using drag & drop
-		// The files can be identified by suffix, verified and then copied to the correct location.
-		// NOTE: If credentials already exist conflict should be handled without data loss.
 
 		public AWSCloudTasks() {
 			// Authentication flow: https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html
@@ -222,6 +269,10 @@ namespace Reification.CloudTasks.AWS {
 			if(account == null) return;
 			GetAuthentication();
 			if(authentication == null) return;
+			if(string.IsNullOrEmpty(account.identity)) {
+				GetIdentity();
+				if(string.IsNullOrEmpty(account.identity)) return;
+			}
 			GetCredentials();
 			if(credentials == null) return;
 			Debug.Log("AWSCloudTasks authentication SUCCESS");
@@ -484,6 +535,8 @@ namespace Reification.CloudTasks.AWS {
 				if(!GetFile(cloudPath, localBakeDonePath)) continue;
 				
 				// TODO: If an error report was received instead of a package, handle that case.
+				// Download console log, notify users, retain original package.
+				// OPTION: Notification invites sharing with Reification for diagnostics.
 				
 				// Clean up queues
 				File.Delete(Path.Combine(localBakeRoot, fileName)); // Do not download file if found
@@ -560,5 +613,8 @@ namespace Reification.CloudTasks.AWS {
 			// including access times, and to receive a list with access
 			// permissions to share with those user.
 		}
+		
+		// IMPORTANT: User avatars will need a similar process, with file identity being shared
+		// to all clients connected to a server.
 	}
 }
