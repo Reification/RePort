@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using Reification.CloudTasks;
 
 namespace Reification.CloudTasks.AWS {
 	[InitializeOnLoad]
@@ -23,7 +24,7 @@ namespace Reification.CloudTasks.AWS {
 			if(localList.Length > 0) {
 				var localPath = localList[0];
 				Debug.Log($"Starting bake for {localPath}");
-				InitiateBake(localPath);
+				PushBake(localPath);
 			}
 		}
 
@@ -38,7 +39,7 @@ namespace Reification.CloudTasks.AWS {
 			EditorApplication.update += Update;
 		}
 		
-		// TODO: User login files should be imported using drag & drop
+		// TODO: User account files should be imported using drag & drop
 		// The files can be identified by suffix, verified and then copied to the correct location.
 		// NOTE: If credentials already exist conflict should be handled without data loss.
 
@@ -53,11 +54,7 @@ namespace Reification.CloudTasks.AWS {
 			if(nextTimeSinceStartup - lastTimeSinceStartup < doneCheckPeriod) return;
 			lastTimeSinceStartup = nextTimeSinceStartup;
 			
-			RetrieveBake((string localPath) => {
-				Debug.Log($"Downloaded baked file: {localPath}");
-				// TODO: SafePackageImport will be called here
-				return true;
-			});
+			PullBakeDone();
 		}
 		
 		// TODO: In the case of an error, a log file is found instead of a package file.
@@ -71,7 +68,7 @@ namespace Reification.CloudTasks.AWS {
 		// IDEA: Client only looks for items in outbox, and cleans up everything when the build succeeds.
 		// NOTE: This also allows for the option of a bake/build failure report.
 
-		public static bool InitiateBake(string localPath) {
+		public static bool PushBake(string localPath) {
 			if(!authorization.authenticated) return false;
 			
 			var fileName = localPath.Substring(localPath.LastIndexOf(Path.DirectorySeparatorChar) + 1);
@@ -86,12 +83,10 @@ namespace Reification.CloudTasks.AWS {
 			return true;
 		}
 
-		public delegate bool BakeDoneCall(string localPath);
-
 		// Check for completed bake tasks, download and import if done
 		// WARNING: Importing may be slow, or may even wait for user input
 		// so a periodic call must halt until each call completes.
-		public static bool RetrieveBake(BakeDoneCall bakeDone) {
+		public static bool PullBakeDone() {
 			// Check for expected files
 			var localBakeRoot = Path.Combine(Application.persistentDataPath, S3.cacheFolder, "Bake");
 			var expectedFileNames = new HashSet<string>();
@@ -102,32 +97,44 @@ namespace Reification.CloudTasks.AWS {
 			}
 			if(expectedFileNames.Count == 0) return true;
 
-			// Check for completed files
-			// EXPECT: S3 policy restricts access to a folder named for the account identity
 			if(!authorization.authenticated) return false;
-			var localBakeDoneRoot = Path.Combine(Application.persistentDataPath, S3.cacheFolder, "Bake-Done");
-			var cloudBakeRoot = $"{authorization.identity}/Bake/";
-			var cloudBakeDoneRoot = $"{authorization.identity}/Bake-Done/";
-			if(!tasks.ListFiles(cloudBakeDoneRoot, out var cloudList)) return false;
-			foreach(var cloudPath in cloudList) {
-				var fileName = cloudPath.Substring(cloudPath.LastIndexOf('/') + 1);
-				if(!expectedFileNames.Contains(fileName)) continue;
+			try {
+				// Disable updating to prevent race in case of slow download or import
+				EditorApplication.update -= Update;
 				
-				var localBakeDonePath = Path.Combine(localBakeDoneRoot, fileName);
-				if(!tasks.GetFile(cloudPath, localBakeDonePath)) return false;
-				// QUESTION: What should be done if file cannot be downloaded?
-				// TODO: Move local file to bug-report folder, create report, attempt to delete remote file.
-				
-				// TODO: If an error report was received instead of a package, handle that case.
-				// Download console log, notify users, retain original package & remove /Bake/ package
-				// OPTION: Notification invites sharing with Reification for diagnostics.
-				
-				// Clean up queues
-				File.Delete(Path.Combine(localBakeRoot, fileName)); // Do not download file if found
-				tasks.DeleteFile($"{cloudBakeRoot}/{fileName}"); // Will not retry bake
-				tasks.DeleteFile(cloudPath); // Will not use package elsewhere
-				bakeDone(localBakeDonePath);
-				// NOTE: Baked package could persist for use in a build without re-uploading
+				// Check for completed files
+				// EXPECT: S3 policy restricts access to a folder named for the account identity
+				var localBakeDoneRoot = Path.Combine(Application.persistentDataPath, S3.cacheFolder, "Bake-Done");
+				var cloudBakeRoot = $"{authorization.identity}/Bake/";
+				var cloudBakeDoneRoot = $"{authorization.identity}/Bake-Done/";
+				if(!tasks.ListFiles(cloudBakeDoneRoot, out var cloudList)) return false;
+				foreach(var cloudPath in cloudList) {
+					var fileName = cloudPath.Substring(cloudPath.LastIndexOf('/') + 1);
+					if(!expectedFileNames.Contains(fileName)) continue;
+
+						var localBakeDonePath = Path.Combine(localBakeDoneRoot, fileName);
+						if(!tasks.GetFile(cloudPath, localBakeDonePath)) return false;
+						Debug.Log($"Downloaded baked file: {localBakeDonePath}");
+						// QUESTION: What should be done if file cannot be downloaded?
+						// TODO: Move local file to bug-report folder, create report, attempt to delete remote file.
+
+						// TODO: If an error report was received instead of a package, handle that case.
+						// Download console log, notify users, retain original package & remove /Bake/ package
+						// OPTION: Notification invites sharing with Reification for diagnostics.
+
+						SafePackageImport.ImportPackage(localBakeDonePath, false, SafePackageImport.KeepPackages.Safe);
+						Debug.Log($"Imported baked file: {localBakeDonePath}");
+
+						// Clean up queues
+						File.Delete(Path.Combine(localBakeRoot, fileName)); // Prevent download and reimport
+						tasks.DeleteFile($"{cloudBakeRoot}/{fileName}"); // Will not retry bake
+						File.Delete(localBakeDonePath); // NOTE: Could keep this file in order to share
+						tasks.DeleteFile(cloudPath); // NOTE: Baked package could persist for use in a build without re-uploading
+						Debug.Log($"Removed bake files");
+				}
+			} finally {
+				// Resume updating
+				EditorApplication.update += Update;
 			}
 
 			return true;
