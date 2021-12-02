@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using  UnityEditor;
 
-namespace Reification {
+namespace Reification.CloudTasks {
 	/// <summary>
 	/// Import only non-executing package contents
 	/// </summary>
@@ -38,7 +38,7 @@ namespace Reification {
 			// Check for package to import
 			// WARNING: This constructor is called 2 times during Editor launch
 			var arguments = Environment.GetCommandLineArgs();
-			UnityEngine.Debug.Log("SafePackageImport: " + String.Join(" ", arguments));
+			//UnityEngine.Debug.Log("SafePackageImport: " + String.Join(" ", arguments));
 			for (var i = 0; i < arguments.Length - 1; ++i) {
 				if (arguments[i] != cliFlagName) continue;
 				var packageFile = arguments[i + 1];
@@ -88,29 +88,9 @@ namespace Reification {
 			// OPTION: Continue importing even if some packages fail
 			// IDEA: Look for comma separated values to identify sequential packages.
 			try {
-				foreach(var unsafePackageFile in importPackageFiles) {
-					if (!File.Exists(unsafePackageFile)) {
-						UnityEngine.Debug.LogWarning($"{cliFlagName} {unsafePackageFile} does not exist!");
-						continue;
-					}
-
-					// Make package safe to import
-					UnityEngine.Debug.Log($"Safe Package Import: {unsafePackageFile}");
-					var safePackageFile = unsafePackageFile.Substring(0, unsafePackageFile.LastIndexOf('.')) + ".safe.unitypackage";
-					var removedAssets = MakeSafePackage(unsafePackageFile, safePackageFile);
-					if (removedAssets.Count > 0) {
-						UnityEngine.Debug.Log(
-							$"SafePackageImport {unsafePackageFile} removed assets:\n" +
-							String.Join(",\n- ", removedAssets)
-						);
-					}
-					
-					// Import package
-					AssetDatabase.ImportPackage(safePackageFile, !Application.isBatchMode);
-				}
+				foreach(var unsafePackageFile in importPackageFiles) ImportPackage(unsafePackageFile);
 			} catch(System.Exception e) {
 				UnityEngine.Debug.LogError($"ProcessPackagesImport failed with error:\n{e.Message}");
-				return;
 			} finally {
 				// IMPORTANT: Unblock future imports even if this import failed
 				importPackageFiles.Clear();
@@ -314,6 +294,40 @@ namespace Reification {
 			Directory.Delete(extractPath, true);
 			
 			return removedAssets;
+		}
+
+		[Flags]
+		public enum KeepPackages {
+			None = 0,
+			Unsafe = 1,
+			Safe = 2,
+			All = 3
+		}
+
+		public static void ImportPackage(string unsafePackageFile, bool interactive = true, KeepPackages keepPackages = KeepPackages.Safe) {
+			if (!File.Exists(unsafePackageFile)) {
+				UnityEngine.Debug.LogWarning($"{cliFlagName} {unsafePackageFile} does not exist!");
+				return;
+			}
+
+			// Make package safe to import
+			UnityEngine.Debug.Log($"Safe Package Import: {unsafePackageFile}");
+			var safePackageFile = unsafePackageFile.Substring(0, unsafePackageFile.LastIndexOf('.')) + ".safe.unitypackage";
+			var removedAssets = MakeSafePackage(unsafePackageFile, safePackageFile);
+			if (removedAssets.Count > 0) {
+				UnityEngine.Debug.Log(
+					$"SafePackageImport {unsafePackageFile} removed assets:\n" +
+					String.Join(",\n- ", removedAssets)
+				);
+			}
+					
+			// Import safe package
+			interactive &= !Application.isBatchMode; // QUESTION: Is this needed?
+			AssetDatabase.ImportPackage(safePackageFile, interactive);
+			
+			// Remove safe package
+			if(!keepPackages.HasFlag(KeepPackages.Safe)) File.Delete(safePackageFile);
+			if(!keepPackages.HasFlag(KeepPackages.Unsafe)) File.Delete(unsafePackageFile);
 		}
 	}
 }
