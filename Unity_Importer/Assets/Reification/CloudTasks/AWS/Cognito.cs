@@ -295,8 +295,7 @@ namespace Reification.CloudTasks.AWS {
 				credentials = null;
 				return false;
 			}
-
-			Debug.Log("AWS CloudTasks enabled");
+			
 			return true;
 		}
 	}

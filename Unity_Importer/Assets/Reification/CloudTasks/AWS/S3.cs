@@ -16,7 +16,7 @@ namespace Reification.CloudTasks.AWS {
 	public class S3 {
 		private static readonly HttpClient httpClient = new HttpClient();
 		
-		public const string cacheFolder = "CloudTasks";
+		public const string localCache = "CloudTasks";
 
 		private Cognito authorization;
 

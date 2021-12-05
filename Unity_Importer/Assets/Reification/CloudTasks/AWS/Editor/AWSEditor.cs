@@ -2,11 +2,10 @@
 // Licensed under Apache 2.0. All Rights reserved.
 
 using System.IO;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
-using Reification.CloudTasks;
+using UnityEditor.SceneManagement;
 
 namespace Reification.CloudTasks.AWS {
 	[InitializeOnLoad]
@@ -21,14 +20,32 @@ namespace Reification.CloudTasks.AWS {
 		
 		[MenuItem(menuItemName, priority = menuItemPriority)]
 		private static void Execute() {
-			// TODO: Create a package of selected/current scene in cacheFolder/Bake/
+			// Package only the active scene - multi scene baking is not yet supported
+			var scenePath = EditorSceneManager.GetActiveScene().path;
+			var sceneRoot = scenePath.Substring(0, scenePath.LastIndexOf('.'));
+			var sceneName = sceneRoot.Substring(sceneRoot.LastIndexOf('/') + 1);
+			var packagePath = Path.Combine(Application.persistentDataPath, S3.localCache, "Bake", sceneName + ".unitypackage");
+			Directory.CreateDirectory(Path.GetDirectoryName(packagePath));
 			
-			var localList = Directory.GetFiles(Path.Combine(Application.persistentDataPath, S3.cacheFolder, "Bake"));
-			if(localList.Length > 0) {
-				var localPath = localList[0];
-				Debug.Log($"Starting bake for {localPath}");
-				PushBake(localPath);
+			// OPTION: Use this method to ensure that only scene assets are updated.
+			/*AssetDatabase.ExportPackage(
+				new string[] {scenePath, sceneRoot + ".prefab", sceneRoot},
+				packagePath, 
+				ExportPackageOptions.Recurse
+			);*/
+			
+			// TODO: In order to ensure that all assets are sent, without including licensed code
+			// reduce this to a safe package.
+			AssetDatabase.ExportPackage(
+				new string[] {scenePath}, 
+				packagePath, 
+				ExportPackageOptions.IncludeDependencies
+			);
+			if(!PushBake(packagePath)) {
+				Debug.LogWarning($"Unable to start bake for {packagePath}");
+				return;
 			}
+			Debug.Log($"Starting bake for {packagePath}");
 		}
 
 		private static Cognito authorization;
@@ -36,9 +53,13 @@ namespace Reification.CloudTasks.AWS {
 		private static S3 tasks;
 		
 		static AWSEditor() {
-			// Enable by default in order to check for completed tasks
 			authorization = new Cognito();
+			if(!authorization.authenticated) return;
+			
+			Debug.Log("AWS CloudTasks enabled");
 			tasks = new S3(authorization);
+			
+			// Enable by default in order to check for completed tasks from previous sessions
 			EditorApplication.update += Update;
 		}
 		
@@ -90,11 +111,15 @@ namespace Reification.CloudTasks.AWS {
 		// WARNING: Importing may be slow, or may even wait for user input
 		// so a periodic call must halt until each call completes.
 		public static bool PullBakeDone() {
+			var localBakeRoot = Path.Combine(Application.persistentDataPath, S3.localCache, "Bake");
+			if(!Directory.Exists(localBakeRoot)) return true;
+			
 			// Check for expected files
-			var localBakeRoot = Path.Combine(Application.persistentDataPath, S3.cacheFolder, "Bake");
 			var expectedFileNames = new HashSet<string>();
 			foreach(var filePath in Directory.GetFiles(localBakeRoot)) {
 				// TODO: Add report file suffix as well, to retrieve report if error occurred
+				// TODO: Build should ALWAYS upload log, even in the case of success
+				// and client should ALWAYS download log, since problems may be found later
 				var fileName = filePath.Substring(filePath.LastIndexOf(Path.DirectorySeparatorChar) + 1);
 				expectedFileNames.Add(fileName);
 			}
@@ -107,7 +132,7 @@ namespace Reification.CloudTasks.AWS {
 				
 				// Check for completed files
 				// EXPECT: S3 policy restricts access to a folder named for the account identity
-				var localBakeDoneRoot = Path.Combine(Application.persistentDataPath, S3.cacheFolder, "Bake-Done");
+				var localBakeDoneRoot = Path.Combine(Application.persistentDataPath, S3.localCache, "Bake-Done");
 				var cloudBakeRoot = $"{authorization.identity}/Bake/";
 				var cloudBakeDoneRoot = $"{authorization.identity}/Bake-Done/";
 				if(!tasks.ListFiles(cloudBakeDoneRoot, out var cloudList)) return false;
@@ -125,9 +150,13 @@ namespace Reification.CloudTasks.AWS {
 						// Download console log, notify users, retain original package & remove /Bake/ package
 						// OPTION: Notification invites sharing with Reification for diagnostics.
 
-						SafePackageImport.ImportPackage(localBakeDonePath, false, SafePackageImport.KeepPackages.Safe);
+						SafePackageImport.ImportPackage(localBakeDonePath, false, SafePackageImport.KeepPackages.Unsafe);
 						Debug.Log($"Imported baked file: {localBakeDonePath}");
 
+						// IDEA: Retain original unbaked package for reversion
+						// and baked package (unsafe) for diagnostics
+						// NOTE: This requires checking folder sizes & file dates to avoid large caches
+						
 						// Clean up queues
 						File.Delete(Path.Combine(localBakeRoot, fileName)); // Prevent download and reimport
 						tasks.DeleteFile($"{cloudBakeRoot}/{fileName}"); // Will not retry bake
