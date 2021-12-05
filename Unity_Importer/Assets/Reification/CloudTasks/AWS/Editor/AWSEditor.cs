@@ -24,23 +24,17 @@ namespace Reification.CloudTasks.AWS {
 			var scenePath = EditorSceneManager.GetActiveScene().path;
 			var sceneRoot = scenePath.Substring(0, scenePath.LastIndexOf('.'));
 			var sceneName = sceneRoot.Substring(sceneRoot.LastIndexOf('/') + 1);
-			var packagePath = Path.Combine(Application.persistentDataPath, S3.localCache, "Bake", sceneName + ".unitypackage");
-			Directory.CreateDirectory(Path.GetDirectoryName(packagePath));
+			sceneName = S3.SafeS3Name(sceneName);
 			
-			// OPTION: Use this method to ensure that only scene assets are updated.
-			/*AssetDatabase.ExportPackage(
-				new string[] {scenePath, sceneRoot + ".prefab", sceneRoot},
-				packagePath, 
-				ExportPackageOptions.Recurse
-			);*/
-			
-			// TODO: In order to ensure that all assets are sent, without including licensed code
-			// reduce this to a safe package.
+			var packageRoot = Path.Combine(Application.persistentDataPath, S3.localCache, "Bake");
+			Directory.CreateDirectory(packageRoot);
+			var packagePath = Path.Combine(packageRoot, sceneName + ".unitypackage");
 			AssetDatabase.ExportPackage(
 				new string[] {scenePath}, 
-				packagePath, 
+				packagePath,
 				ExportPackageOptions.IncludeDependencies
 			);
+			
 			if(!PushBake(packagePath)) {
 				Debug.LogWarning($"Unable to start bake for {packagePath}");
 				return;

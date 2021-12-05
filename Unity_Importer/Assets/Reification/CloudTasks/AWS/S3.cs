@@ -6,6 +6,7 @@ using System.IO;
 using System.Net.Http;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 
 // Log errors in Unity console
@@ -22,6 +23,19 @@ namespace Reification.CloudTasks.AWS {
 
 		public S3(Cognito authorization) {
 			this.authorization = authorization;
+		}
+		
+		static public string SafeS3Name(string name) {
+			var trimChars = new char[] { '.' };
+			name = name.Trim(trimChars);
+			// Keep only characters known to be safe in names
+			// https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+			// NOTE: If spaces in names were retained they would be replaced by +
+			var allowedChars = new Regex(@"[0-9a-zA-Z\/\.\-_'!\(\)]*");
+			var matchParts = allowedChars.Matches(name);
+			var nameBuilder = new StringBuilder();
+			foreach(var match in matchParts) nameBuilder.Append(match.ToString());
+			return nameBuilder.ToString();
 		}
 		
 		// QUESTION: Is there a way to make the operations asynchronous with a callback?
@@ -125,7 +139,8 @@ namespace Reification.CloudTasks.AWS {
 			var service = domainSplit[1];
 			var region = domainSplit[2];
 
-			// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+			// https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html
+			// https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
 			var requestUri = new UriBuilder("https", authorization.cloudUrl);
 			requestUri.Path = cloudPath;
 
