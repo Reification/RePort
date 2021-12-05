@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright 2021 Reification Incorporated
+// Licensed under Apache 2.0. All Rights reserved.
+
+using System;
 using System.IO;
 using System.Net.Http;
 using System.Collections.Generic;
