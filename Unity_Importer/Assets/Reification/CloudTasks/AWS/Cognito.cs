@@ -16,7 +16,20 @@ namespace Reification.CloudTasks.AWS {
 		// https://medium.com/@nuno.caneco/c-httpclient-should-not-be-disposed-or-should-it-45d2a8f568bc
 		private static readonly HttpClient httpClient = new HttpClient();
 
-		public const string accountFile = "CloudTasks_AWSAccount.json";
+		public Cognito(string accountPath) {
+			this.accountPath = accountPath;
+			Authenticate();
+		}
+
+		private bool Authenticate() {
+			// Authentication flow: https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html
+			// NOTE: Identity only needs to be retrieved once
+			if(account == null && ! LoadAccount()) return false;
+			if(authentication == null && !GetAuthentication()) return false;
+			if(string.IsNullOrEmpty(account.identity) && !GetIdentity()) return false;
+			if(credentials == null && !GetCredentials()) return false;
+			return true;
+		}
 		
 		// TODO: Option for user to exclude password from account file
 		// TODO: Option to attempt authentication WITHOUT user input (so fail if password or MFA is needed)
@@ -29,19 +42,14 @@ namespace Reification.CloudTasks.AWS {
 					authentication = null;
 					credentials = null;
 				}
-				
-				// Authentication flow: https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html
-				// NOTE: Identity only needs to be retrieved once
-				if(account == null && ! LoadAccount()) return false;
-				if(authentication == null && !GetAuthentication()) return false;
-				if(string.IsNullOrEmpty(account.identity) && !GetIdentity()) return false;
-				if(credentials == null && !GetCredentials()) return false;
-				return true;
+				return Authenticate();
 			}
 		}
-
-		private void Authenticate() {
-		}
+		
+		/// <summary>
+		/// Path to AWS account file
+		/// </summary>
+		public string accountPath { get; }
 
 		// TODO: Class methods to extract regions
 		// Regions: https://docs.aws.amazon.com/general/latest/gr/cognito_identity.html
@@ -69,11 +77,6 @@ namespace Reification.CloudTasks.AWS {
 		}
 
 		private bool LoadAccount() {
-			// NOTE: Application.persistentDataPath has the form base_path/Company/Project/*
-			// so a project independent path requires moving up two levels.
-			var projectDirectory = new DirectoryInfo(Application.persistentDataPath);
-			var accountRoot = projectDirectory.Parent.Parent.ToString();
-			var accountPath = Path.Combine(accountRoot, accountFile);
 			if(!File.Exists(accountPath)) {
 				Debug.Log($"Missing account file {accountPath} -> AWS CloudTasks disabled");
 				return false;

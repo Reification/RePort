@@ -9,13 +9,13 @@ using UnityEditor.SceneManagement;
 
 namespace Reification.CloudTasks.AWS {
 	[InitializeOnLoad]
-	public class AWSEditor {
+	public class AWSEditor : AssetPostprocessor {
 		const string menuItemName = "Reification/CloudTasks/AWS Bake";
 		const int menuItemPriority = 100;
 		
 		[MenuItem(menuItemName, validate = true, priority = menuItemPriority)]
 		private static bool Validate() {
-			return authorization != null && authorization.authenticated;
+			return cognito != null && cognito.authenticated;
 		}
 		
 		[MenuItem(menuItemName, priority = menuItemPriority)]
@@ -41,17 +41,46 @@ namespace Reification.CloudTasks.AWS {
 			}
 			Debug.Log($"Starting bake for {packagePath}");
 		}
+		
+		// Enable importing of AWS account using drag & drop onto Unity editor
+		static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths) {
+			foreach(var assetPath in importedAssets) {
+				var assetName = assetPath.Substring(assetPath.LastIndexOf('/') + 1);
+				if(assetName != accountFile) continue;
+				
+				var projectRoot = Application.dataPath.Substring(0, Application.dataPath.Length - "/Assets".Length);
+				projectRoot = projectRoot.Replace('/', Path.DirectorySeparatorChar);
+				
+				var projectAccountPath = Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar));
+				File.Copy(projectAccountPath, cognito.accountPath);
+				AssetDatabase.DeleteAsset(assetPath);
+				Debug.Log($"AWS account moved to: {cognito.accountPath}");
+				if(cognito.authenticated) Debug.Log("AWS account authorized!");
+				else Debug.LogWarning("AWS account authorization failed");
+			}
+		}
+		
+		/// <summary>
+		/// Name of AWS account file used to authenticate
+		/// </summary>
+		public const string accountFile = "CloudTasks_AWSAccount.json";
 
-		private static Cognito authorization;
+		private static Cognito cognito;
 
-		private static S3 tasks;
+		private static S3 s3;
 		
 		static AWSEditor() {
-			authorization = new Cognito();
-			if(!authorization.authenticated) return;
+			// NOTE: Application.persistentDataPath has the form base_path/Company/Project/*
+			// so a project independent path requires moving up two levels.
+			var projectDirectory = new DirectoryInfo(Application.persistentDataPath);
+			var accountRoot = projectDirectory.Parent.Parent.ToString();
+			var accountPath = Path.Combine(accountRoot, accountFile);
+			
+			cognito = new Cognito(accountPath);
+			if(!cognito.authenticated) return;
 			
 			Debug.Log("AWS CloudTasks enabled");
-			tasks = new S3(authorization);
+			s3 = new S3(cognito);
 			
 			// Enable by default in order to check for completed tasks from previous sessions
 			EditorApplication.update += Update;
@@ -87,12 +116,12 @@ namespace Reification.CloudTasks.AWS {
 		// NOTE: This also allows for the option of a bake/build failure report.
 
 		public static bool PushBake(string localPath) {
-			if(!authorization.authenticated) return false;
+			if(!cognito.authenticated) return false;
 			
 			var fileName = localPath.Substring(localPath.LastIndexOf(Path.DirectorySeparatorChar) + 1);
 			// EXPECT: S3 policy restricts access to a folder named for the account identity
-			var cloudPath = $"{authorization.identity}/Bake/{fileName}";
-			if(!tasks.PutFile(localPath, cloudPath)) return false;
+			var cloudPath = $"{cognito.identity}/Bake/{fileName}";
+			if(!s3.PutFile(localPath, cloudPath)) return false;
 
 			// IMPORTANT: Client could upload a new file version while old one is processing.
 			// This will overwrite the file version, but could result in an output race, so
@@ -119,7 +148,7 @@ namespace Reification.CloudTasks.AWS {
 			}
 			if(expectedFileNames.Count == 0) return true;
 
-			if(!authorization.authenticated) return false;
+			if(!cognito.authenticated) return false;
 			try {
 				// Disable updating to prevent race in case of slow download or import
 				EditorApplication.update -= Update;
@@ -127,15 +156,15 @@ namespace Reification.CloudTasks.AWS {
 				// Check for completed files
 				// EXPECT: S3 policy restricts access to a folder named for the account identity
 				var localBakeDoneRoot = Path.Combine(Application.persistentDataPath, S3.localCache, "Bake-Done");
-				var cloudBakeRoot = $"{authorization.identity}/Bake/";
-				var cloudBakeDoneRoot = $"{authorization.identity}/Bake-Done/";
-				if(!tasks.ListFiles(cloudBakeDoneRoot, out var cloudList)) return false;
+				var cloudBakeRoot = $"{cognito.identity}/Bake/";
+				var cloudBakeDoneRoot = $"{cognito.identity}/Bake-Done/";
+				if(!s3.ListFiles(cloudBakeDoneRoot, out var cloudList)) return false;
 				foreach(var cloudPath in cloudList) {
 					var fileName = cloudPath.Substring(cloudPath.LastIndexOf('/') + 1);
 					if(!expectedFileNames.Contains(fileName)) continue;
 
 						var localBakeDonePath = Path.Combine(localBakeDoneRoot, fileName);
-						if(!tasks.GetFile(cloudPath, localBakeDonePath)) return false;
+						if(!s3.GetFile(cloudPath, localBakeDonePath)) return false;
 						Debug.Log($"Downloaded baked file: {localBakeDonePath}");
 						// QUESTION: What should be done if file cannot be downloaded?
 						// TODO: Move local file to bug-report folder, create report, attempt to delete remote file.
@@ -154,9 +183,9 @@ namespace Reification.CloudTasks.AWS {
 						
 						// Clean up queues
 						File.Delete(Path.Combine(localBakeRoot, fileName)); // Prevent download and reimport
-						tasks.DeleteFile($"{cloudBakeRoot}/{fileName}"); // Will not retry bake
+						s3.DeleteFile($"{cloudBakeRoot}/{fileName}"); // Will not retry bake
 						File.Delete(localBakeDonePath); // NOTE: Could keep this file in order to share
-						tasks.DeleteFile(cloudPath); // NOTE: Baked package could persist for use in a build without re-uploading
+						s3.DeleteFile(cloudPath); // NOTE: Baked package could persist for use in a build without re-uploading
 						Debug.Log($"Removed bake files");
 				}
 			} finally {
