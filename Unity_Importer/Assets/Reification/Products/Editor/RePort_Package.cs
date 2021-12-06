@@ -10,8 +10,8 @@ using UnityEditor;
 /// Create UnityPackage for RePort module
 /// </summary>
 public class RePort_Package {
-	const string menuItemName = "Products/RePort Package";
-	const int menuItemPriority = 0;
+	const string menuItemName = "Reification/Products/RePort Package";
+	const int menuItemPriority = 200;
 
 	public const string packageName = "RePort_for_Unity";
 
@@ -25,14 +25,17 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Editor/AutoStatic.cs",
 			"Assets/Reification/AutoImport/Editor/AutoColliders.cs",
 			"Assets/Reification/AutoImport/Editor/AutoScene.cs",
+			"Assets/Reification/AutoImport/Editor/AutoLightSources.cs",
+			"Assets/Reification/AutoImport/Shaders/StandardCrossfade.shader",
+			
+			// Lighting Bake
+			// TODO: Separate this
 			"Assets/Reification/AutoImport/Editor/AutoLightCharts.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightDirect.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightProbes.cs",
-			"Assets/Reification/AutoImport/Editor/AutoLightSources.cs",
 			"Assets/Reification/AutoImport/Editor/AutoLightmaps.cs",
 			"Assets/Reification/AutoImport/Editor/Importers/RhinoImporters.cs",
 			"Assets/Reification/AutoImport/Scripts/LightProbeProxyUpdate.cs",
-			"Assets/Reification/AutoImport/Shaders/StandardCrossfade.shader",
 			"Assets/Reification/AutoImport/Settings/FastLightmaps.giparams",
 			"Assets/Reification/AutoImport/Settings/GoodLightmaps.giparams",
 
@@ -47,6 +50,7 @@ public class RePort_Package {
 			"Assets/Reification/AutoImport/Prefabs/Player.prefab",
 			"Assets/Reification/AutoImport/Prefabs/Sun.prefab",
 			"Assets/Reification/AutoImport/Settings/PostProcessing.asset",
+			// TODO: Declare PostProcessing package dependency
 
 			// Mesh Repair
 			"Assets/Reification/MeshRepair/MeshExtensions.cs",
@@ -60,7 +64,8 @@ public class RePort_Package {
 			"Assets/Reification/Extensions/TransformExtensions.cs",
 			"Assets/Reification/Extensions/PathName/PathName.cs",
 			"Assets/Reification/Extensions/PathName/PathNameExtensions.cs",
-			"Assets/Reification/SafeImport/Editor/SafePackageImport.cs"
+			
+			"Assets/Reification/CloudTasks"
 	};
 
 	[MenuItem(menuItemName, priority = menuItemPriority)]
@@ -81,7 +86,7 @@ public class RePort_Package {
 		var package = new string[assetPaths.Count];
 		assetPaths.CopyTo(package);
 		var fileName = (Application.dataPath + "/../Builds/" + packageName + ".unitypackage").Replace('/', Path.DirectorySeparatorChar);
-		AssetDatabase.ExportPackage(package, fileName);
+		AssetDatabase.ExportPackage(package, fileName, ExportPackageOptions.Recurse);
 		Debug.Log("Created: " + fileName);
 	}
 }
