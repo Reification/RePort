@@ -74,7 +74,7 @@ namespace Reification.CloudTasks.AWS {
 			// so a project independent path requires moving up two levels.
 			var projectDirectory = new DirectoryInfo(Application.persistentDataPath);
 			var accountRoot = projectDirectory.Parent.Parent.ToString();
-			var accountPath = Path.Combine(accountRoot, accountFile);
+			var accountPath = Path.Combine(accountRoot, "Reification", accountFile);
 			
 			cognito = new Cognito(accountPath);
 			if(!cognito.authenticated) return;
