@@ -52,7 +52,7 @@ namespace Reification.CloudTasks.AWS {
 				projectRoot = projectRoot.Replace('/', Path.DirectorySeparatorChar);
 				
 				var projectAccountPath = Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar));
-				File.Copy(projectAccountPath, cognito.accountPath);
+				File.Copy(projectAccountPath, cognito.accountPath, true);
 				AssetDatabase.DeleteAsset(assetPath);
 				Debug.Log($"AWS account moved to: {cognito.accountPath}");
 				if(cognito.authenticated) Debug.Log("AWS account authorized!");
@@ -77,9 +77,6 @@ namespace Reification.CloudTasks.AWS {
 			var accountPath = Path.Combine(accountRoot, "Reification", accountFile);
 			
 			cognito = new Cognito(accountPath);
-			if(!cognito.authenticated) return;
-			
-			Debug.Log("AWS CloudTasks enabled");
 			s3 = new S3(cognito);
 			
 			// Enable by default in order to check for completed tasks from previous sessions
