@@ -144,6 +144,7 @@ namespace Reification.CloudTasks.AWS {
 						// Download console log, notify users, retain original package & remove /Bake/ package
 						// OPTION: Notification invites sharing with Reification for diagnostics.
 
+						// SECURITY: IMPORTANT: Even if server is compromised, executable code will be stripped
 						SafePackageImport.ImportPackage(localBakeDonePath, false, SafePackageImport.KeepPackages.Unsafe);
 						Debug.Log($"Imported baked file: {localBakeDonePath}");
 

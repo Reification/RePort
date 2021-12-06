@@ -288,9 +288,14 @@ namespace Reification.CloudTasks {
 			}
 			
 			// Create safe version of package
-			Package(safePackageFile, extractPath);
-			
-			// Remove package directory
+			if(removedAssets.Count > 0) {
+				Package(safePackageFile, extractPath);
+			} else {
+				// Skip the compression step
+				File.Copy(unsafePackageFile, safePackageFile);
+			}
+
+			// Remove extracted package directory
 			Directory.Delete(extractPath, true);
 			
 			return removedAssets;
@@ -303,7 +308,7 @@ namespace Reification.CloudTasks {
 			Safe = 2,
 			All = 3
 		}
-
+		
 		public static void ImportPackage(string unsafePackageFile, bool interactive = true, KeepPackages keepPackages = KeepPackages.Safe) {
 			if (!File.Exists(unsafePackageFile)) {
 				UnityEngine.Debug.LogWarning($"{cliFlagName} {unsafePackageFile} does not exist!");
@@ -325,7 +330,7 @@ namespace Reification.CloudTasks {
 			interactive &= !Application.isBatchMode; // QUESTION: Is this needed?
 			AssetDatabase.ImportPackage(safePackageFile, interactive);
 			
-			// Remove safe package
+			// NOTE: Importing safePackageFile will skip the compression step.
 			if(!keepPackages.HasFlag(KeepPackages.Safe)) File.Delete(safePackageFile);
 			if(!keepPackages.HasFlag(KeepPackages.Unsafe)) File.Delete(unsafePackageFile);
 		}
