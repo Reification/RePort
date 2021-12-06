@@ -16,7 +16,7 @@ namespace Reification.CloudTasks.AWS {
 		// https://medium.com/@nuno.caneco/c-httpclient-should-not-be-disposed-or-should-it-45d2a8f568bc
 		private static readonly HttpClient httpClient = new HttpClient();
 
-		public const string accountFile = "AWSCloudTasks_account.json";
+		public const string accountFile = "CloudTasks_AWSAccount.json";
 		
 		// TODO: Option for user to exclude password from account file
 		// TODO: Option to attempt authentication WITHOUT user input (so fail if password or MFA is needed)
@@ -69,9 +69,11 @@ namespace Reification.CloudTasks.AWS {
 		}
 
 		private bool LoadAccount() {
-			// FIXME: persistentDataPath is project-specific, but this should be universal
-			// NOTE: persistentDataPath is base_path/Company/Project/* so up two levels is universal
-			var accountPath = Path.Combine(Application.persistentDataPath, accountFile);
+			// NOTE: Application.persistentDataPath has the form base_path/Company/Project/*
+			// so a project independent path requires moving up two levels.
+			var projectDirectory = new DirectoryInfo(Application.persistentDataPath);
+			var accountRoot = projectDirectory.Parent.Parent.ToString();
+			var accountPath = Path.Combine(accountRoot, accountFile);
 			if(!File.Exists(accountPath)) {
 				Debug.Log($"Missing account file {accountPath} -> AWS CloudTasks disabled");
 				return false;
@@ -82,6 +84,10 @@ namespace Reification.CloudTasks.AWS {
 			if(account is null) {
 				Debug.LogWarning($"AWSCloudTasks unable to read account file {accountPath}");
 			}
+			
+			// TODO: If password is null, request password or fail in batch mode
+			// NOTE: null password indicates that it should not be stored in plaintext
+			// but account may be re-serialized after, so password must be cached separately.
 
 			return true;
 		}
