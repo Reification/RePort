@@ -514,7 +514,7 @@ namespace Reification {
 
 			try {
 				AssetDatabase.StartAssetEditing();
-				// Merge prefab consistuents and copy assets
+				// Merge prefab constituents and copy assets
 				// NOTE: If new constituents are added or updated they will be merged into existing model.
 				// NOTE: If additional prefabs are added they will replace placeholders
 				// in the merged model, which will persist through the merge and configure process.
@@ -648,20 +648,31 @@ namespace Reification {
 
 			var configured = new List<string>(configuredScenes);
 			
+			// TODO: Automatic baking in batch mode (servers) only, possibly with command
+			// Otherwise, prompt user to bake locally, or use a cloud service.
+			
+			// HERE: Lighting data can also be generated in cloud
+			// NOTE: The same applies to UnwrapCL charts
+			// TODO: Configure scene lighting, but do not compute charts or lighting
+			// so that model can be viewed and corrected, and bake (paid on cloud) starts with user action.
+			// Alternatively, if this is running on the cloud, bake should start immediately.
+
 			// PROBLEM: Processing scenes will generate additional assets
 			// and will fail into an infinite loop if AssetEditing is active.
 			// SOLUTION: Identify scenes to be processed, then invoke ProcessConfiguredScenes
 			// after AssetEditing has ended
 			try {
 				foreach(var scenePath in configuredScenes) {
-					// TODO: Lighting charts should be included here
-					// OPTION: Combine all scenes into unified bake
-					// FIXME: Do not re-bake if imported scene includes lightmaps
-					if(!LightingDataExists(scenePath)) {
+					// TODO: Lighting charts should be included here (waiting on parallelization)
+					// TODO: Option to bake on local machine
+					// TEMP: Only single-scene baking is supported.
+					if(!LightingDataExists(scenePath) && Application.isBatchMode) {
+						// TODO: Local or remote bake should be decided by user
+						// PROBLEM: The request should be made IMMEDIATELY on import, and resolved here by checking a static queue.
 						Debug.Log($"Begin lightmap bake for {scenePath}");
 						AutoLightmaps.ApplyTo(AutoLightmaps.LightmapBakeMode.fast, scenePath);
+						// TODO: Event for additional baking steps (reflections, acoustics, occlusion, navigation...)
 					}
-					// TODO: Hook to bake Reflections, Acoustics...
 				}
 			} catch(Exception e) {
 				Debug.LogError($"ProcessImportedModels failed with error:\n{e.Message}");
@@ -687,8 +698,8 @@ namespace Reification {
 				var packageName = "RePort-Import";
 				EP.CreatePersistentPath(buildPath);
 				// TODO: Use import package name for export
-				var fileName = (Application.dataPath + "/" + buildPath + "/" + packageName + ".unitypackage").Replace('/', Path.DirectorySeparatorChar);
-				AssetDatabase.ExportPackage(configured.ToArray(), fileName, ExportPackageOptions.IncludeDependencies);
+				var packagePath = (Application.dataPath + "/" + buildPath + "/" + packageName + ".unitypackage").Replace('/', Path.DirectorySeparatorChar);
+				AssetDatabase.ExportPackage(configured.ToArray(), packagePath, ExportPackageOptions.IncludeDependencies);
 				// NOTE: Specifying IncludeDependencies will include packages that are used in the scene.
 				// This is necessary in order to include supported client assets that are purchased.
 				
@@ -702,8 +713,8 @@ namespace Reification {
 				EditorApplication.Exit(0);
 			}
 			
-			// OPTION: Open all scenes
 			// If only one model was imported, open it
+			// OPTION: Open scenes additively (requires tracking when an import starts and opening the first in single mode)
 			if(configured.Count == 1) EditorSceneManager.OpenScene(configured[0], OpenSceneMode.Single);
 		}
 	}
