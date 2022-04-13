@@ -653,6 +653,8 @@ def RunCommand(is_interactive):
         print(command_preamble + ": no export location -> abort")
         return
     
+    success = True
+    
     # Record modification status
     modified = sc.doc.Modified
     
@@ -671,6 +673,7 @@ def RunCommand(is_interactive):
         ExportSelected(scale, *path_name)
     except Exception as exception:
         print(exception)
+        success = False
         pass
     finally:
         # Revert object names and selection
@@ -683,7 +686,11 @@ def RunCommand(is_interactive):
     
     # Restore modification status - all changes have been reverted
     sc.doc.Modified = modified
-    print(command_preamble + ": success")
+    
+    if success:
+        print(command_preamble + ": success")
+    else:
+        print(command_preamble + ": failure")
 
 # GOAL: No changes to scene (no save request)
 # GOAL: Launch Rhino in batch mode (headless) 
