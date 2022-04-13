@@ -133,9 +133,8 @@ def RevertRename(name_map):
 def SaveSuffix():
     return ".3dm_" + str(Rhino_version) + ".fbx"
 
-# IDEA: When exporting placeholders
-# exclude materials and textures
-# IDEA: When  exporting detail or placeholders exclude cameras and lights
+# IDEA: When exporting placeholders exclude materials and textures
+# IDEA: When exporting detail or placeholders exclude cameras and lights
 
 # Save options target export for rendering
 # NOTE: GeometryOnly=Yes would exclude BOTH cameras and lights
@@ -179,7 +178,7 @@ def FormatOptions():
 # https://wiki.mcneel.com/rhino/meshsettings
 # https://docs.mcneel.com/rhino/7/help/en-us/popup_moreinformation/polygon_mesh_detailed_options.htm
 def MeshingOptions(detail):
-    options = " PolygonDensity=0 "
+    options = "PolygonDensity=0 "
     if detail == 0:
         options += "DetailedOptions "\
             "JaggedSeams=No "\
@@ -258,36 +257,35 @@ def MeshingOptions(detail):
 # Including count or even parameters.
 # NOTE: This would require cached preferences.
 
-# NOTE: file_name followed by space will exit save options
-# IMPORTANT: enclosing file_name in " prevents truncation at spaces
-def ExportModel(path, name, detail=0):
+def ExportModel(path, name, detail=-1):
     file_name = os.path.join(path, name + SaveSuffix())
-    success = rs.Command(
-        "-Export " +\
-        SaveOptions() +\
-        '"' + file_name + '" ' +\
-        FormatOptions() + "Enter " +\
-        MeshingOptions(detail) + "Enter " +\
-        "Enter", 
-        True
-    )
+    command = "-Export " + SaveOptions()
+    # NOTE: file_name followed by space will exit save options
+    # IMPORTANT: enclosing file_name in " prevents truncation at spaces
+    command += '"' + file_name + '" '
+    command += FormatOptions() + 'Enter '
+    # WARNING: meshing options are only accepted if export will generate meshes
+    if detail >= 0:
+        command += MeshingOptions(detail) + 'Enter '
+    # NOTE: final Enter is required to exit the Export command
+    command += 'Enter'
+    success = rs.Command(command, True)
     if not success:
         raise Exception("Model export failed for " + file_name)
 
-# NOTE: file_name followed by space will exit save options
-# IMPORTANT: enclosing file_name in " prevents truncation at spaces
-def ExportBlock(path, name, detail=0):
-    file_name = os.path.join(path, name + save_sufix())
-    success = rs.Command(
-        "-BlockManager Export " +\
-        '"' + name + '" ' +\
-        SaveOptions() +\
-        '"' + file_name + '" ' +\
-        FormatOptions() + "Enter " +\
-        MeshingOptions(detail) + "Enter " +\
-        "Enter Enter",  # NOTE: Second enter exits BlockManager
-        True
-    )
+def ExportBlock(path, name, detail=-1):
+    file_name = os.path.join(path, name + SaveSuffix())
+    command = "-BlockManager Export " + SaveOptions()
+    # NOTE: file_name followed by space will exit save options
+    # IMPORTANT: enclosing file_name in " prevents truncation at spaces
+    command += '"' + file_name + '" '
+    command += FormatOptions() + 'Enter '
+    # WARNING: meshing options are only accepted if export will generate meshes
+    if detail >= 0:
+        command += MeshingOptions(detail) + 'Enter '
+    # NOTE: final Enter Enter is required to exit the Export & BlockManager commands
+    command += 'Enter Enter'
+    success = rs.Command(command, True)
     if not success:
         raise Exception("Block export failed for " + file_name)
 
