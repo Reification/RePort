@@ -497,9 +497,9 @@ def ShowStep(step_name):
     input = ""
     while True:
         input = rs.GetString("Showing step: " + step_name + " ([C]ontinue or [A]bort?)")
-        if input.StartsWith("C"):
+        if input.lower().StartsWith("c"):
             break
-        if input.StartsWith("A"):
+        if input.lower().StartsWith("a"):
             raise Exception("Aborted at step: " + step_name)
     rs.EnableRedraw(False)
 
