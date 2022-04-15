@@ -522,10 +522,15 @@ def ExportSelected(scale, path, name):
             placeholders.append(lightLocation)
             rs.SelectObject(lightLocation)
     if len(SelectedObjects()) > 0:
-        #ShowStep("Light export")
-        ExportModel(path, name + ".lights")
-        rs.DeleteObjects(placeholders)
-        export_exists = True
+        # NOTE: Rhino v5 export to FBX fails if lights are included
+        if Rhino_version >= 6:
+            #ShowStep("Light export")
+            ExportModel(path, name + ".lights")
+            rs.DeleteObjects(placeholders)
+            export_exists = True
+        else:
+            print("WARNING: Model contains " + str(len(SelectedObjects())) + " lights -> Rhino v6 or higher required for export")
+            ShowStep("Model Lights")
     rs.UnselectAllObjects()
     
     # Export meshes
