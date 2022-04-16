@@ -14,7 +14,7 @@ __commandname__ = __plugin__.title
 # SOLUTION: Make the version in __plugin__.py invariant and declare code version here.
 # NOTE: The version declared in __plugin__.py must be non-zero
 # https://discourse.mcneel.com/t/updating-python-plugin-version/119362
-RePort_version = "0.3.1" #__plugin__.version
+RePort_version = "0.3.2" #__plugin__.version
 
 Rhino_version = RhinoApp.Version.Major
 
@@ -133,9 +133,7 @@ def RevertRename(name_map):
 def SaveSuffix():
     return ".3dm_" + str(Rhino_version) + ".fbx"
 
-# IDEA: When exporting placeholders
-# exclude materials and textures
-# IDEA: When  exporting detail or placeholders exclude cameras and lights
+# IDEA: When exporting placeholders exclude materials and textures
 
 # Save options target export for rendering
 # NOTE: GeometryOnly=Yes would exclude BOTH cameras and lights
@@ -179,7 +177,7 @@ def FormatOptions():
 # https://wiki.mcneel.com/rhino/meshsettings
 # https://docs.mcneel.com/rhino/7/help/en-us/popup_moreinformation/polygon_mesh_detailed_options.htm
 def MeshingOptions(detail):
-    options = " PolygonDensity=0 "
+    options = "PolygonDensity=0 "
     if detail == 0:
         options += "DetailedOptions "\
             "JaggedSeams=No "\
@@ -258,36 +256,35 @@ def MeshingOptions(detail):
 # Including count or even parameters.
 # NOTE: This would require cached preferences.
 
-# NOTE: file_name followed by space will exit save options
-# IMPORTANT: enclosing file_name in " prevents truncation at spaces
-def ExportModel(path, name, detail=0):
+def ExportModel(path, name, detail=-1):
     file_name = os.path.join(path, name + SaveSuffix())
-    success = rs.Command(
-        "-Export " +\
-        SaveOptions() +\
-        '"' + file_name + '" ' +\
-        FormatOptions() + "Enter " +\
-        MeshingOptions(detail) + "Enter " +\
-        "Enter", 
-        True
-    )
+    command = "-Export " + SaveOptions()
+    # NOTE: file_name followed by space will exit save options
+    # IMPORTANT: enclosing file_name in " prevents truncation at spaces
+    command += '"' + file_name + '" '
+    command += FormatOptions() + 'Enter '
+    # WARNING: meshing options are only accepted if export will generate meshes
+    if detail >= 0:
+        command += MeshingOptions(detail) + 'Enter '
+    # NOTE: final Enter is required to exit the Export command
+    command += 'Enter'
+    success = rs.Command(command, True)
     if not success:
         raise Exception("Model export failed for " + file_name)
 
-# NOTE: file_name followed by space will exit save options
-# IMPORTANT: enclosing file_name in " prevents truncation at spaces
-def ExportBlock(path, name, detail=0):
-    file_name = os.path.join(path, name + save_sufix())
-    success = rs.Command(
-        "-BlockManager Export " +\
-        '"' + name + '" ' +\
-        SaveOptions() +\
-        '"' + file_name + '" ' +\
-        FormatOptions() + "Enter " +\
-        MeshingOptions(detail) + "Enter " +\
-        "Enter Enter",  # NOTE: Second enter exits BlockManager
-        True
-    )
+def ExportBlock(path, name, detail=-1):
+    file_name = os.path.join(path, name + SaveSuffix())
+    command = "-BlockManager Export " + SaveOptions()
+    # NOTE: file_name followed by space will exit save options
+    # IMPORTANT: enclosing file_name in " prevents truncation at spaces
+    command += '"' + file_name + '" '
+    command += FormatOptions() + 'Enter '
+    # WARNING: meshing options are only accepted if export will generate meshes
+    if detail >= 0:
+        command += MeshingOptions(detail) + 'Enter '
+    # NOTE: final Enter Enter is required to exit the Export & BlockManager commands
+    command += 'Enter Enter'
+    success = rs.Command(command, True)
     if not success:
         raise Exception("Block export failed for " + file_name)
 
@@ -404,7 +401,8 @@ def BlockLocation(object, scale):
     rs.ObjectLayer(placeholder, rs.ObjectLayer(object))
     return placeholder
 
-# PROBLEM: Lights-only export fails!
+# WARNING: Lights cannot be included in export in Rhino v5
+# PROBLEM: Lights-only export with no meshes fails!
 # PROBLEM: Lights are exported without rotation or shape!
 # SOLUTION: Create a placeholder tetrahedron that encodes light parameters
 # PROBLEM: FBX does not support line light type
@@ -497,9 +495,9 @@ def ShowStep(step_name):
     input = ""
     while True:
         input = rs.GetString("Showing step: " + step_name + " ([C]ontinue or [A]bort?)")
-        if input.StartsWith("C"):
+        if input.lower().StartsWith("c"):
             break
-        if input.StartsWith("A"):
+        if input.lower().StartsWith("a"):
             raise Exception("Aborted at step: " + step_name)
     rs.EnableRedraw(False)
 
@@ -524,10 +522,15 @@ def ExportSelected(scale, path, name):
             placeholders.append(lightLocation)
             rs.SelectObject(lightLocation)
     if len(SelectedObjects()) > 0:
-        #ShowStep("Light export")
-        ExportModel(path, name + ".lights")
-        rs.DeleteObjects(placeholders)
-        export_exists = True
+        # NOTE: Rhino v5 export to FBX fails if lights are included
+        if Rhino_version >= 6:
+            #ShowStep("Light export")
+            ExportModel(path, name + ".lights")
+            rs.DeleteObjects(placeholders)
+            export_exists = True
+        else:
+            print("WARNING: Model contains " + str(len(SelectedObjects())) + " lights -> Rhino v6 or higher required for export")
+            ShowStep("Model Lights")
     rs.UnselectAllObjects()
     
     # Export meshes
@@ -653,6 +656,8 @@ def RunCommand(is_interactive):
         print(command_preamble + ": no export location -> abort")
         return
     
+    success = True
+    
     # Record modification status
     modified = sc.doc.Modified
     
@@ -671,6 +676,7 @@ def RunCommand(is_interactive):
         ExportSelected(scale, *path_name)
     except Exception as exception:
         print(exception)
+        success = False
         pass
     finally:
         # Revert object names and selection
@@ -683,9 +689,12 @@ def RunCommand(is_interactive):
     
     # Restore modification status - all changes have been reverted
     sc.doc.Modified = modified
-    print(command_preamble + ": success")
+    
+    if success:
+        print(command_preamble + ": success")
+    else:
+        print(command_preamble + ": failure")
 
-# GOAL: No changes to scene (no save request)
 # GOAL: Launch Rhino in batch mode (headless) 
 # with script, input & output paths as arguments
 if __name__ == "__main__": RunCommand(True)
