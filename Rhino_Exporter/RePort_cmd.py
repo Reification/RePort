@@ -14,7 +14,7 @@ __commandname__ = __plugin__.title
 # SOLUTION: Make the version in __plugin__.py invariant and declare code version here.
 # NOTE: The version declared in __plugin__.py must be non-zero
 # https://discourse.mcneel.com/t/updating-python-plugin-version/119362
-RePort_version = "0.3.1" #__plugin__.version
+RePort_version = "0.3.2" #__plugin__.version
 
 Rhino_version = RhinoApp.Version.Major
 
@@ -134,7 +134,6 @@ def SaveSuffix():
     return ".3dm_" + str(Rhino_version) + ".fbx"
 
 # IDEA: When exporting placeholders exclude materials and textures
-# IDEA: When exporting detail or placeholders exclude cameras and lights
 
 # Save options target export for rendering
 # NOTE: GeometryOnly=Yes would exclude BOTH cameras and lights
@@ -402,7 +401,8 @@ def BlockLocation(object, scale):
     rs.ObjectLayer(placeholder, rs.ObjectLayer(object))
     return placeholder
 
-# PROBLEM: Lights-only export fails!
+# WARNING: Lights cannot be included in export in Rhino v5
+# PROBLEM: Lights-only export with no meshes fails!
 # PROBLEM: Lights are exported without rotation or shape!
 # SOLUTION: Create a placeholder tetrahedron that encodes light parameters
 # PROBLEM: FBX does not support line light type
@@ -695,7 +695,6 @@ def RunCommand(is_interactive):
     else:
         print(command_preamble + ": failure")
 
-# GOAL: No changes to scene (no save request)
 # GOAL: Launch Rhino in batch mode (headless) 
 # with script, input & output paths as arguments
 if __name__ == "__main__": RunCommand(True)
